@@ -216,7 +216,7 @@ export function Topbar() {
             { value: "production", label: "● Production" },
           ]}
         />
-        <Button variant="aiSoft" size="sm" onClick={() => openAssistant({ page: path.split("/")[1] || "home" })}>
+        <Button variant="aiSoft" size="sm" onClick={() => openAssistant(pipelineMatch ? {} : { pipelineId: undefined, page: path.split("/")[1] || "home" })}>
           <Sparkles /> Ask AI
         </Button>
         {pipelineMatch && (

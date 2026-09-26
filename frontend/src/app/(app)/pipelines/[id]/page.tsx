@@ -1,9 +1,10 @@
 "use client";
 
-import { Check, CloudCheck, History, LoaderCircle, Pencil, Sparkles, SlidersHorizontal, Undo2 } from "lucide-react";
+import { Check, CloudCheck, History, LayoutTemplate, LoaderCircle, Pencil, Sparkles, SlidersHorizontal, Undo2 } from "lucide-react";
+import { toast } from "sonner";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
-import { Badge, Button, Dialog, ErrorBox, Segmented, Skeleton } from "@/components/ui";
+import { Badge, Button, Dialog, ErrorBox, Field, Input, Segmented, Skeleton, Textarea } from "@/components/ui";
 import { Stepper } from "@/components/wizard/Stepper";
 import { SourceStep } from "@/components/wizard/SourceStep";
 import { AnalyzeStep } from "@/components/wizard/AnalyzeStep";
@@ -14,7 +15,7 @@ import { ReviewStep } from "@/components/wizard/ReviewStep";
 import { DeployStep } from "@/components/wizard/DeployStep";
 import { MonitoringDashboard } from "@/components/monitoring/MonitoringDashboard";
 import { api } from "@/lib/api";
-import { useApi, usePipeline } from "@/lib/hooks";
+import { showError, useApi, usePipeline } from "@/lib/hooks";
 import { useUI } from "@/lib/store";
 import { STEPS, type Pipeline, type Step } from "@/lib/types";
 import { timeAgo } from "@/lib/utils";
@@ -48,6 +49,33 @@ function HistoryDialog({ id, open, onOpenChange, onRestore }: { id: string; open
   );
 }
 
+function SaveTemplateDialog({ id, open, onOpenChange, defaultName }: { id: string; open: boolean; onOpenChange: (v: boolean) => void; defaultName: string }) {
+  const [name, setName] = useState(defaultName);
+  const [description, setDescription] = useState("");
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.post(`/api/pipelines/${id}/save-template`, { name, description, category: "Custom" });
+      toast.success("Saved as template", { description: "Your team can now start pipelines from it." });
+      onOpenChange(false);
+    } catch (e) {
+      showError(e);
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange} title="Save as Template" description="Saves transformation patterns, ingestion, Lakehouse, governance and quality settings — never data or credentials." size="sm"
+      footer={<><Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button><Button variant="primary" onClick={save} loading={saving} disabled={!name}>Save template</Button></>}>
+      <div className="space-y-4">
+        <Field label="Template name" required><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
+        <Field label="Description"><Textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What is this template good for?" /></Field>
+      </div>
+    </Dialog>
+  );
+}
+
 function Wizard() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -57,6 +85,7 @@ function Wizard() {
   const [editingName, setEditingName] = useState(false);
   const [name, setName] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [templateOpen, setTemplateOpen] = useState(false);
 
   const step = (search.get("step") as Step) || pipeline?.metadata.current_step || "source";
 
@@ -136,6 +165,9 @@ function Wizard() {
           <Button variant="ghost" size="sm" onClick={() => setHistoryOpen(true)}>
             <History /> History
           </Button>
+          <Button variant="ghost" size="sm" onClick={() => setTemplateOpen(true)} disabled={!meta.transformations.length}>
+            <LayoutTemplate /> Save as Template
+          </Button>
         </div>
         <div className="mx-auto max-w-[1600px] px-4 py-2 md:px-6">
           <Stepper current={step} completed={meta.completed_steps} onSelect={goTo} deployed={meta.deployment.status === "deployed"} />
@@ -152,6 +184,7 @@ function Wizard() {
         {step === "monitor" && <MonitoringDashboard pipelineId={id} embedded />}
         {!STEPS.some((s) => s.id === step) && <ErrorBox error={new Error("Unknown step")} />}
       </div>
+      <SaveTemplateDialog key={pipeline.name} id={id} open={templateOpen} onOpenChange={setTemplateOpen} defaultName={`${pipeline.name} template`} />
       <HistoryDialog
         id={id}
         open={historyOpen}
