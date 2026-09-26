@@ -1,31 +1,23 @@
 "use client";
 
-import { Background, Handle, PanOnScrollMode, Position, ReactFlow, type Node, type NodeProps } from "@xyflow/react";
-import "@xyflow/react/dist/style.css";
-import {
-  Binary, Calendar, CircleCheck, CircleDashed, CircleX, Columns3, Copy, Database, Eye, Filter, Globe, GripVertical, ListTree, Lock, Merge, Pencil, Plus, Search, ShieldCheck,
-  Sigma, Sparkles, SquareFunction, Table, Trash2, Type, Workflow, Wand, X, ArrowUp, ArrowDown, Copy as CopyIcon,
-} from "lucide-react";
+import { ArrowDownUp, ArrowRight, CircleCheck, CircleX, Eye, Plus, Redo2, Settings2, Sparkles, Trash2, Undo2, Workflow, ListTree } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { RecommendationPanel } from "@/components/ai/Recommendations";
-import { AIBadge, Badge, Button, Card, ConfirmDialog, Dialog, EmptyState, Input, Segmented, Spinner, Switch, Tabs, TabsList, TabsTrigger, Tooltip } from "@/components/ui";
+import { AssistantChat } from "@/components/shell/AssistantPanel";
+import { QualityPanel } from "@/components/quality/QualityPanel";
+import { FileTypeIcon } from "@/components/source/FileTypeIcon";
+import { DataGrid } from "@/components/data/DataGrid";
+import { Button, ConfirmDialog, EmptyState, Select, Segmented, Skeleton, Tooltip } from "@/components/ui";
+import { PillTabs } from "@/components/wizard/common";
 import { api } from "@/lib/api";
-import { showError, useDebounced, useTransformLibrary } from "@/lib/hooks";
+import { showError, useApi, useDebounced, useTransformLibrary } from "@/lib/hooks";
+import { useUI } from "@/lib/store";
 import type { ColumnInfo, Pipeline, Preview, TransformSpec, TransformStep } from "@/lib/types";
-import { cn } from "@/lib/utils";
-import { BeforeAfter } from "./BeforeAfter";
-import { ParamForm } from "./ParamForm";
-
-const CAT_ICON: Record<string, React.ComponentType<{ className?: string; style?: React.CSSProperties }>> = {
-  clean: Sparkles, types: Binary, text: Type, datetime: Calendar, missing: CircleDashed, duplicates: Copy, filter: Filter, join: Merge, aggregate: Sigma,
-  pivot: Table, schema: Columns3, derived: SquareFunction, enrich: Globe, quality: ShieldCheck, pii: Lock,
-};
-const CAT_COLOR: Record<string, string> = {
-  clean: "#6366f1", types: "#0ea5e9", text: "#14b8a6", datetime: "#f59e0b", missing: "#94a3b8", duplicates: "#ef4444", filter: "#8b5cf6", join: "#ec4899",
-  aggregate: "#10b981", pivot: "#06b6d4", schema: "#64748b", derived: "#7c3aed", enrich: "#22c55e", quality: "#16a34a", pii: "#e11d48",
-};
+import { cn, fmtCompact, fmtNumber } from "@/lib/utils";
+import { STAGES } from "./catalog";
+import { AppliedList, DataPreviewPanel, Library, Panel, RecsPanel, SettingsPanel, SummaryPanel } from "./panels";
 
 type Selection = { kind: "step"; id: string } | { kind: "draft"; type: string } | null;
+type Tab = "preview" | "transform" | "quality" | "enrich" | "schema" | "assistant";
 
 interface StudioProps {
   pipeline: Pipeline;
@@ -37,173 +29,116 @@ function defaults(spec: TransformSpec): Record<string, any> {
   return Object.fromEntries(spec.params.filter((p) => p.default !== null && p.default !== undefined).map((p) => [p.name, p.default]));
 }
 
-// ------------------------------------------------------------------ flow nodes
-type StepNodeData = { label: string; sub: string; category: string; origin?: string; enabled?: boolean; status?: string; selected?: boolean; kind: "source" | "step" | "output" | "add"; onClick?: () => void };
+function download(name: string, content: string, type: string) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([content], { type }));
+  a.download = name;
+  a.click();
+}
 
-function StepNode({ data }: NodeProps<Node<StepNodeData>>) {
-  const Icon = data.kind === "source" ? Database : data.kind === "output" ? ShieldCheck : data.kind === "add" ? Plus : CAT_ICON[data.category] ?? Wand;
-  const color = data.kind === "source" ? "#0c1330" : data.kind === "output" ? "#10b981" : CAT_COLOR[data.category] ?? "#6366f1";
-  if (data.kind === "add")
-    return (
-      <button onClick={data.onClick} className="flex h-10 w-[300px] items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-white/70 text-sm font-medium text-slate-500 hover:border-brand-400 hover:text-brand-600">
-        <Handle type="target" position={Position.Top} />
-        <Plus className="size-4" /> Add transformation
-      </button>
-    );
+function RawPreview({ pipelineId, datasetId }: { pipelineId: string; datasetId: string }) {
+  const [stage, setStage] = useState<"raw" | "transformed">("transformed");
+  const { data, loading } = useApi<{ columns: { name: string; type: string }[]; rows: Record<string, any>[]; total_rows: number }>(`/api/pipelines/${pipelineId}/datasets/${datasetId}/preview?stage=${stage}&limit=200`, [stage, datasetId]);
   return (
-    <div
-      onClick={data.onClick}
-      className={cn(
-        "w-[300px] cursor-pointer rounded-xl border bg-white px-3 py-2.5 shadow-card transition-all hover:shadow-lift",
-        data.selected ? "border-brand-500 ring-2 ring-brand-200" : "border-slate-200",
-        data.enabled === false && "opacity-50",
-        data.status === "error" && "border-rose-300 ring-2 ring-rose-100",
+    <Panel title="Data Preview" info="Browse your data as received (Bronze) or after all transformations (Silver)." actions={<Segmented size="sm" value={stage} onChange={setStage} options={[{ value: "raw", label: "Original" }, { value: "transformed", label: "Transformed" }]} />}>
+      {loading || !data ? <Skeleton className="h-96" /> : (
+        <>
+          <div className="mb-2 text-xs text-slate-500">Showing 1-{data.rows.length} of {fmtNumber(data.total_rows)} rows · {data.columns.length} columns</div>
+          <DataGrid columns={data.columns} rows={data.rows} maxHeight={560} />
+        </>
       )}
-    >
-      <Handle type="target" position={Position.Top} />
-      <div className="flex items-center gap-2.5">
-        <div className="flex size-8 shrink-0 items-center justify-center rounded-lg text-white" style={{ background: color }}>
-          <Icon className="size-4" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[13px] font-semibold text-slate-800">{data.label}</div>
-          <div className="truncate text-[11px] text-slate-500">{data.sub}</div>
-        </div>
-        {data.origin === "ai" && <span className="rounded bg-ai-50 px-1 text-[9px] font-bold text-ai-600 ring-1 ring-ai-200">AI</span>}
-        {data.status === "error" && <CircleX className="size-4 text-rose-500" />}
-        {data.status === "ok" && data.kind === "step" && <CircleCheck className="size-3.5 text-emerald-500" />}
-      </div>
-      <Handle type="source" position={Position.Bottom} />
-    </div>
-  );
-}
-const nodeTypes = { step: StepNode };
-
-// ------------------------------------------------------------------ library
-function Library({ onPick, filter }: { onPick: (t: TransformSpec) => void; filter?: string }) {
-  const lib = useTransformLibrary();
-  const [q, setQ] = useState("");
-  const [open, setOpen] = useState<Record<string, boolean>>({ clean: true });
-  if (!lib) return <div className="p-4"><Spinner /></div>;
-  const term = (filter ?? q).toLowerCase();
-  return (
-    <div className="flex h-full flex-col">
-      <div className="p-3">
-        <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />
-          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Search ${lib.transforms.length} transformations`} className="h-8 pl-8 text-xs" />
-        </div>
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3 scrollbar-thin">
-        {lib.categories.map((c) => {
-          const items = lib.transforms.filter((t) => t.category === c.id && (!term || (t.label + " " + t.description + " " + t.keywords.join(" ")).toLowerCase().includes(term)));
-          if (!items.length) return null;
-          const Icon = CAT_ICON[c.id] ?? Wand;
-          const isOpen = !!term || open[c.id];
-          return (
-            <div key={c.id} className="mb-1">
-              <button onClick={() => setOpen({ ...open, [c.id]: !open[c.id] })} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs font-semibold text-slate-700 hover:bg-slate-100">
-                <Icon className="size-3.5" style={{ color: CAT_COLOR[c.id] } as React.CSSProperties} />
-                {c.label}
-                <span className="ml-auto text-[10px] font-normal text-slate-400">{items.length}</span>
-              </button>
-              {isOpen && (
-                <div className="ml-2 border-l border-slate-100 pl-2">
-                  {items.map((t) => (
-                    <Tooltip key={t.id} content={t.description} side="right">
-                      <button onClick={() => onPick(t)} className="group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12.5px] text-slate-600 hover:bg-brand-50 hover:text-brand-700">
-                        <span className="truncate">{t.label}</span>
-                        <Plus className="ml-auto size-3.5 shrink-0 opacity-0 group-hover:opacity-100" />
-                      </button>
-                    </Tooltip>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
+    </Panel>
   );
 }
 
-// ------------------------------------------------------------------ studio
 export function Studio({ pipeline, mutate, busy }: StudioProps) {
   const lib = useTransformLibrary();
   const meta = pipeline.metadata;
+  const { setAssistantContext } = useUI();
   const datasets = meta.source.datasets.filter((d) => d.selected);
   const dsNames = datasets.map((d) => ({ id: d.id, name: d.name.split(" › ").pop() ?? d.name }));
   const [datasetId, setDatasetId] = useState<string>(datasets[0]?.id ?? "");
+  const [tab, setTab] = useState<Tab>("transform");
   const [view, setView] = useState<"flow" | "table">("flow");
+  const [stage, setStage] = useState<string | null>(null);
   const [sel, setSel] = useState<Selection>(null);
   const [params, setParams] = useState<Record<string, any>>({});
   const [columns, setColumns] = useState<ColumnInfo[]>([]);
   const [rightColumns, setRightColumns] = useState<ColumnInfo[]>([]);
-  const [preview, setPreview] = useState<Preview | null>(null);
-  const [previewing, setPreviewing] = useState(false);
-  const [recsOpen, setRecsOpen] = useState(false);
+  const [pipePreview, setPipePreview] = useState<Preview | null>(null);
+  const [stepPreview, setStepPreview] = useState<Preview | null>(null);
+  const [loadingPreview, setLoadingPreview] = useState(false);
+  const [reorderMode, setReorderMode] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<TransformStep | null>(null);
-  const [dragId, setDragId] = useState<string | null>(null);
-  const [stepStatus, setStepStatus] = useState<Record<string, { status: string; message?: string }>>({});
-  const previewSeq = useRef(0);
-  const flowBox = useRef<HTMLDivElement>(null);
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const seq = useRef(0);
 
   useEffect(() => {
     if (!datasets.some((d) => d.id === datasetId) && datasets[0]) setDatasetId(datasets[0].id);
   }, [datasets, datasetId]);
+  useEffect(() => {
+    setAssistantContext({ pipelineId: pipeline.id, page: "transform", datasetId });
+  }, [pipeline.id, datasetId, setAssistantContext]);
 
-  const steps = useMemo(() => meta.transformations.filter((t) => t.dataset_id === datasetId), [meta.transformations, datasetId]);
-  const step = sel?.kind === "step" ? steps.find((s) => s.id === sel.id) : undefined;
-  const specId = sel?.kind === "draft" ? sel.type : step?.type;
-  const spec = lib?.transforms.find((t) => t.id === specId);
-  const pendingRecs = meta.recommendations.filter((r) => r.status === "pending" && r.dataset_id === datasetId && r.area === "transformation").length;
+  const allSteps = useMemo(() => meta.transformations.filter((t) => t.dataset_id === datasetId), [meta.transformations, datasetId]);
+  const specOf = useCallback((type: string) => lib?.transforms.find((t) => t.id === type), [lib]);
+  const stageOf = useCallback((type: string) => STAGES.find((s) => s.cats.includes(specOf(type)?.category ?? ""))?.id ?? "clean", [specOf]);
+  const steps = stage ? allSteps.filter((s) => stageOf(s.type) === stage) : allSteps;
+  const step = sel?.kind === "step" ? allSteps.find((s) => s.id === sel.id) : undefined;
+  const spec = specOf(sel?.kind === "draft" ? sel.type : step?.type ?? "");
+  const status = Object.fromEntries((pipePreview?.step_results ?? []).map((r) => [r.step_id, { status: r.status, message: r.message }]));
+  const ds = datasets.find((d) => d.id === datasetId);
+  const dsName = dsNames.find((d) => d.id === datasetId)?.name ?? "";
+  const profile = meta.analysis.profiles[datasetId];
+  const silver = meta.lakehouse.tables.find((t) => t.layer === "silver" && t.source_datasets.includes(datasetId));
 
-  // columns available at the selected position
   useEffect(() => {
     if (!datasetId) return;
     const q = sel?.kind === "step" ? `?before_step=${sel.id}` : "";
     api.get<ColumnInfo[]>(`/api/pipelines/${pipeline.id}/datasets/${datasetId}/columns${q}`).then(setColumns).catch(() => setColumns([]));
   }, [pipeline.id, datasetId, sel, meta.transformations.length]);
-
   useEffect(() => {
     const rd = params.right_dataset as string | undefined;
     if (!rd) return setRightColumns([]);
     api.get<ColumnInfo[]>(`/api/pipelines/${pipeline.id}/datasets/${rd}/columns`).then(setRightColumns).catch(() => setRightColumns([]));
   }, [pipeline.id, params.right_dataset]);
 
-  const debouncedParams = useDebounced(params, 450);
-
-  const runPreview = useCallback(async () => {
-    if (!datasetId) return;
-    const seq = ++previewSeq.current;
-    setPreviewing(true);
-    try {
-      let body: Record<string, unknown> = { dataset_id: datasetId };
-      if (sel?.kind === "draft") body = { ...body, draft: { type: sel.type, params: debouncedParams } };
-      else if (sel?.kind === "step" && step) {
-        const changed = JSON.stringify(step.params) !== JSON.stringify(debouncedParams);
-        body = changed ? { ...body, draft: { type: step.type, params: debouncedParams }, replace_step_id: step.id } : { ...body, step_id: step.id };
-      }
-      const res = await api.post<Preview>(`/api/pipelines/${pipeline.id}/preview`, body);
-      if (seq !== previewSeq.current) return;
-      setPreview(res);
-      if (!sel) setStepStatus(Object.fromEntries(res.step_results.map((r) => [r.step_id, { status: r.status, message: r.message }])));
-    } catch (e) {
-      if (seq === previewSeq.current) setPreview(null);
-      showError(e, "Preview failed");
-    } finally {
-      if (seq === previewSeq.current) setPreviewing(false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pipeline.id, datasetId, sel, debouncedParams, step?.id, meta.transformations]);
-
+  // Whole-pipeline preview drives the summary, step statuses and the data preview.
+  const stepsKey = JSON.stringify(allSteps.map((s) => [s.id, s.enabled, s.params]));
   useEffect(() => {
-    void runPreview();
-  }, [runPreview]);
+    if (!datasetId) return;
+    let alive = true;
+    setLoadingPreview(true);
+    api.post<Preview>(`/api/pipelines/${pipeline.id}/preview`, { dataset_id: datasetId, rows: 60 })
+      .then((p) => { if (alive) setPipePreview(p); })
+      .catch((e) => { if (alive) showError(e, "Preview failed"); })
+      .finally(() => { if (alive) setLoadingPreview(false); });
+    return () => { alive = false; };
+  }, [pipeline.id, datasetId, stepsKey]);
+
+  // Preview of the selected step or unsaved draft.
+  const dParams = useDebounced(params, 450);
+  useEffect(() => {
+    if (!sel || !datasetId) {
+      setStepPreview(null);
+      return;
+    }
+    const n = ++seq.current;
+    let body: Record<string, unknown> = { dataset_id: datasetId };
+    if (sel.kind === "draft") body = { ...body, draft: { type: sel.type, params: dParams } };
+    else if (step) body = JSON.stringify(step.params) !== JSON.stringify(dParams) ? { ...body, draft: { type: step.type, params: dParams }, replace_step_id: step.id } : { ...body, step_id: step.id };
+    setLoadingPreview(true);
+    api.post<Preview>(`/api/pipelines/${pipeline.id}/preview`, body)
+      .then((p) => { if (n === seq.current) setStepPreview(p); })
+      .catch(() => { if (n === seq.current) setStepPreview(null); })
+      .finally(() => { if (n === seq.current) setLoadingPreview(false); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sel, dParams, datasetId, step?.id]);
 
   const pickTransform = (t: TransformSpec) => {
     const p = defaults(t);
-    // Pre-select the most plausible column so most steps work with a single click.
     for (const ps of t.params.filter((x) => x.type === "column" && x.required && !x.name.startsWith("right"))) {
       const hint = (ps.label + " " + t.label).toLowerCase();
       const bySemantic = columns.find((c) => c.semantic_type && hint.includes(c.semantic_type.replace(/_/g, " ").split(" ")[0]));
@@ -218,13 +153,10 @@ export function Studio({ pipeline, mutate, busy }: StudioProps) {
     setSel({ kind: "step", id: s.id });
     setParams(s.params ?? {});
   };
-
   const addStep = async () => {
     if (sel?.kind !== "draft") return;
     const res = await mutate("add-step", () => api.post<Pipeline & { step_id: string }>(`/api/pipelines/${pipeline.id}/transformations`, { dataset_id: datasetId, type: sel.type, params }), { success: `Added: ${spec?.label}` });
-    if (res?.step_id) {
-      setSel({ kind: "step", id: res.step_id });
-    }
+    if (res?.step_id) setSel({ kind: "step", id: res.step_id });
   };
   const saveStep = () => step && mutate("save-step", () => api.patch<Pipeline>(`/api/pipelines/${pipeline.id}/transformations/${step.id}`, { params }), { success: "Step updated" });
   const toggleStep = (s: TransformStep) => mutate("toggle", () => api.patch<Pipeline>(`/api/pipelines/${pipeline.id}/transformations/${s.id}`, { enabled: !s.enabled }));
@@ -238,201 +170,165 @@ export function Studio({ pipeline, mutate, busy }: StudioProps) {
     const others = meta.transformations.filter((t) => t.dataset_id !== datasetId).map((t) => t.id);
     return mutate("reorder", () => api.post<Pipeline>(`/api/pipelines/${pipeline.id}/transformations/reorder`, { order: [...others, ...order] }));
   };
+  const idsInOrder = allSteps.map((s) => s.id);
   const move = (i: number, d: number) => {
-    const ids = steps.map((s) => s.id);
-    const [x] = ids.splice(i, 1);
-    ids.splice(i + d, 0, x);
+    const target = steps[i + d]?.id;
+    if (!target) return;
+    const ids = [...idsInOrder];
+    const a = ids.indexOf(steps[i].id);
+    const b = ids.indexOf(target);
+    [ids[a], ids[b]] = [ids[b], ids[a]];
     void reorder(ids);
   };
+  const dropAt = (dragId: string, index: number) => {
+    const ids = idsInOrder.filter((x) => x !== dragId);
+    const targetId = steps[index]?.id;
+    ids.splice(targetId ? ids.indexOf(targetId) : ids.length, 0, dragId);
+    void reorder(ids);
+  };
+  const lastUndo = meta.history[meta.history.length - 1]?.event === "undo";
+  const pendingIds = meta.recommendations.filter((r) => r.status === "pending" && r.area === "transformation" && r.dataset_id === datasetId).map((r) => r.id);
 
-  const specOf = (type: string) => lib?.transforms.find((t) => t.id === type);
+  if (!datasets.length) return <EmptyState icon={<Workflow />} title="No datasets yet" description="Connect a source and select datasets first." />;
+  if (!lib) return <Skeleton className="h-[640px]" />;
 
-  const nodes: Node<StepNodeData>[] = useMemo(() => {
-    const ds = dsNames.find((d) => d.id === datasetId);
-    const out: Node<StepNodeData>[] = [
-      { id: "source", type: "step", position: { x: 0, y: 0 }, data: { kind: "source", label: ds?.name ?? "Source", sub: "Raw data (Bronze)", category: "source", onClick: () => setSel(null), selected: !sel } },
-    ];
-    steps.forEach((s, i) => {
-      const sp = specOf(s.type);
-      const cat = sp?.category ?? "clean";
-      out.push({
-        id: s.id, type: "step", position: { x: 0, y: (i + 1) * 78 },
-        data: { kind: "step", label: s.label || sp?.label || s.type, sub: `${lib?.categories.find((c) => c.id === cat)?.label ?? ""}${s.origin === "template" ? " · template" : ""}`, category: cat, origin: s.origin, enabled: s.enabled, status: stepStatus[s.id]?.status, selected: sel?.kind === "step" && sel.id === s.id, onClick: () => selectStep(s) },
-      });
-    });
-    out.push({ id: "add", type: "step", position: { x: 0, y: (steps.length + 1) * 78 }, data: { kind: "add", label: "", sub: "", category: "", onClick: () => setView("flow") } });
-    const silver = meta.lakehouse.tables.find((t) => t.layer === "silver" && t.source_datasets.includes(datasetId));
-    out.push({ id: "output", type: "step", position: { x: 0, y: (steps.length + 2) * 78 }, data: { kind: "output", label: silver ? `Silver: ${silver.name}` : "Output", sub: "Clean, validated table", category: "output", onClick: () => setSel(null) } });
-    return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [steps, sel, stepStatus, lib, datasetId, meta.lakehouse.tables]);
-  const edges = useMemo(() => nodes.slice(1).map((n, i) => ({ id: `e${i}`, source: nodes[i].id, target: n.id, animated: n.id === "output", style: { stroke: "#c7d2fe", strokeWidth: 2 } })), [nodes]);
-
-  if (!datasets.length) return <Card><EmptyState icon={<Wand />} title="No datasets yet" description="Connect a source and select datasets first." /></Card>;
+  const stageSteps = (id: string) => allSteps.filter((x) => x.enabled && stageOf(x.type) === id);
+  const stageError = (id: string) => stageSteps(id).some((s) => status[s.id]?.status === "error");
+  const visibleStages = STAGES.filter((s) => s.id !== "protect" || stageSteps("protect").length);
+  const libCat = tab === "enrich" ? "enrich" : tab === "schema" ? "schema" : null;
+  const inStudio = tab === "transform" || tab === "enrich" || tab === "schema";
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <Tabs value={datasetId} onValueChange={(v) => { setDatasetId(v); setSel(null); }}>
-          <TabsList className="border-none">
-            {dsNames.map((d) => (
-              <TabsTrigger key={d.id} value={d.id} className="rounded-lg border-b-0 data-[state=active]:bg-white data-[state=active]:shadow-card">
-                {d.name}
-                <span className="rounded bg-slate-100 px-1.5 text-[10px] text-slate-500">{meta.transformations.filter((t) => t.dataset_id === d.id).length}</span>
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
-        <div className="ml-auto flex items-center gap-2">
-          {pendingRecs > 0 && (
-            <Button variant="aiSoft" size="sm" onClick={() => setRecsOpen(true)}>
-              <Sparkles /> {pendingRecs} transformation{pendingRecs !== 1 ? "s" : ""} recommended
-            </Button>
+      <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200/80 bg-white px-4 py-3 shadow-card">
+        <FileTypeIcon format={meta.source.category === "file" ? ds?.format : meta.source.category === "api" ? "api" : "table"} size={30} />
+        <div className="min-w-0">
+          {datasets.length > 1 ? (
+            <Select value={datasetId} onChange={(v) => { setDatasetId(v); setSel(null); setStage(null); }} options={dsNames.map((d) => ({ value: d.id, label: d.name }))} className="w-56 [&_select]:h-8 [&_select]:font-semibold" />
+          ) : (
+            <div className="text-[15px] font-semibold text-slate-900">{dsName}</div>
           )}
-          <Segmented size="sm" value={view} onChange={setView} options={[{ value: "flow", label: "Visual Flow", icon: <Workflow /> }, { value: "table", label: "Table View", icon: <ListTree /> }]} />
+          <div className="text-xs text-slate-500">{datasets.length} dataset{datasets.length !== 1 ? "s" : ""} • {fmtCompact(ds?.row_count)} rows • {profile?.column_count ?? ds?.column_count} columns</div>
+        </div>
+        <PillTabs value={tab} onChange={(t) => { setTab(t); if (t !== "transform" && t !== "enrich" && t !== "schema") setSel(null); }} className="mx-auto"
+          tabs={[{ value: "preview", label: "Data Preview" }, { value: "transform", label: "Transform" }, { value: "quality", label: "Data Quality" }, { value: "enrich", label: "Enrich & Derive" }, { value: "schema", label: "Schema Mapping" }, { value: "assistant", label: "AI Assistant" }]} />
+        <div className="flex items-center gap-1.5">
+          <Tooltip content="Undo"><Button variant="secondary" size="icon" className="h-9 w-9" onClick={() => mutate("undo", () => api.post<Pipeline>(`/api/pipelines/${pipeline.id}/undo`), { success: "Undone" })} disabled={pipeline.version <= 1}><Undo2 /></Button></Tooltip>
+          <Tooltip content="Redo"><Button variant="secondary" size="icon" className="h-9 w-9" onClick={() => mutate("redo", () => api.post<Pipeline>(`/api/pipelines/${pipeline.id}/undo`), { success: "Redone" })} disabled={!lastUndo}><Redo2 /></Button></Tooltip>
+          <Button variant="secondary" className="border-brand-300 text-brand-700" onClick={() => { setSel(null); setTab("transform"); setTimeout(() => document.getElementById("studio-preview")?.scrollIntoView({ behavior: "smooth" }), 50); }}><Eye /> Preview</Button>
+          <Button variant="primary" onClick={() => mutate("apply", () => api.post<Pipeline>(`/api/pipelines/${pipeline.id}/recommendations/apply`, { ids: pendingIds }), { success: `Applied ${pendingIds.length} recommendations` })} disabled={!pendingIds.length} loading={busy === "apply"}>Apply All</Button>
+          <Tooltip content={meta.mode === "advanced" ? "Advanced Mode is on (click for Simple)" : "Switch to Advanced Mode"}>
+            <Button variant={meta.mode === "advanced" ? "primary" : "secondary"} size="icon" className="h-9 w-9" onClick={() => mutate("mode", () => api.patch<Pipeline>(`/api/pipelines/${pipeline.id}`, { mode: meta.mode === "advanced" ? "simple" : "advanced" }))}><Settings2 /></Button>
+          </Tooltip>
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[250px_minmax(0,1fr)_400px]">
-        <Card className="h-[560px] overflow-hidden">
-          <div className="border-b border-slate-100 px-4 py-3 text-sm font-semibold">Transformation library</div>
-          <div className="h-[calc(100%-45px)]"><Library onPick={pickTransform} /></div>
-        </Card>
+      {tab === "preview" && <RawPreview pipelineId={pipeline.id} datasetId={datasetId} />}
+      {tab === "quality" && <QualityPanel pipeline={pipeline} mutate={mutate} />}
+      {tab === "assistant" && (
+        <Panel title="AI Assistant" info="Grounded in this dataset's profile and your transformation steps." bodyClassName="px-0 pb-0">
+          <div className="h-[600px] border-t border-slate-100"><AssistantChat /></div>
+        </Panel>
+      )}
 
-        <Card className="relative h-[560px] overflow-hidden">
-          {view === "flow" ? (
-            <div ref={flowBox} className="grid-bg h-full">
-              <ReactFlow
-                key={datasetId}
-                nodes={nodes}
-                edges={edges}
-                nodeTypes={nodeTypes}
-                onInit={(inst) => {
-                  const w = flowBox.current?.clientWidth ?? 600;
-                  inst.setViewport({ x: (w - 300 * 0.95) / 2, y: 20, zoom: 0.95 });
-                }}
-                panOnScroll
-                panOnScrollMode={PanOnScrollMode.Vertical}
-                nodesDraggable={false}
-                nodesConnectable={false}
-                elementsSelectable={false}
-                proOptions={{ hideAttribution: true }}
-                minZoom={0.3}
-              >
-                <Background gap={18} color="#e2e8f0" />
-              </ReactFlow>
+      {inStudio && (
+        <>
+          <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-card">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-[20px] font-semibold tracking-tight text-slate-900">Transformation Studio</h2>
+                <p className="text-[13px] text-slate-500">Clean, standardize and enrich your data with one-click transformations — every change is previewed on your real data.</p>
+              </div>
+              <Segmented value={view} onChange={setView} options={[{ value: "flow", label: "Visual Flow", icon: <Workflow /> }, { value: "table", label: "Table View", icon: <ListTree /> }]} />
             </div>
-          ) : (
-            <div className="h-full overflow-y-auto scrollbar-thin">
-              {steps.length === 0 && <EmptyState icon={<Wand />} title="No transformation steps yet" description="Pick one from the library or apply AI recommendations." />}
-              <div className="divide-y divide-slate-100">
-                {steps.map((s, i) => {
-                  const sp = specOf(s.type);
-                  const st = stepStatus[s.id];
+            {view === "flow" && (
+              <div className="mt-4 flex items-stretch gap-1.5 overflow-x-auto pb-1 pt-1.5 scrollbar-thin">
+                <button onClick={() => setStage(null)} className={cn("relative flex min-w-[170px] items-center gap-2.5 rounded-xl border bg-white px-3 py-2.5 text-left", stage === null ? "border-brand-400 bg-brand-50/40" : "border-slate-200 hover:border-slate-300")}>
+                  <FileTypeIcon format={meta.source.category === "file" ? ds?.format : "table"} size={24} />
+                  <span className="min-w-0"><span className="block text-[13px] font-semibold text-slate-900">Source</span><span className="block truncate text-[11px] text-slate-500">{dsName}</span><span className="block text-[11px] text-slate-400">{fmtCompact(ds?.row_count)} rows • {profile?.column_count ?? "?"} cols</span></span>
+                  <CircleCheck className="absolute -right-1.5 -top-1.5 size-4 rounded-full bg-white text-emerald-500" />
+                </button>
+                {visibleStages.map((s) => {
+                  const n = stageSteps(s.id).length;
+                  const err = stageError(s.id);
+                  const active = stage === s.id;
+                  const sub = s.id === "shape" ? `${pipePreview?.after.columns.length ?? "—"} columns` : `${n} ${s.unit}${n !== 1 ? "s" : ""}`;
                   return (
-                    <div
-                      key={s.id}
-                      draggable
-                      onDragStart={() => setDragId(s.id)}
-                      onDragOver={(e) => e.preventDefault()}
-                      onDrop={() => {
-                        if (!dragId || dragId === s.id) return;
-                        const ids = steps.map((x) => x.id).filter((x) => x !== dragId);
-                        ids.splice(i, 0, dragId);
-                        setDragId(null);
-                        void reorder(ids);
-                      }}
-                      onClick={() => selectStep(s)}
-                      className={cn("group flex cursor-pointer items-center gap-3 px-4 py-2.5 hover:bg-slate-50", sel?.kind === "step" && sel.id === s.id && "bg-brand-50/60", !s.enabled && "opacity-50")}
-                    >
-                      <GripVertical className="size-4 cursor-grab text-slate-300" />
-                      <span className="w-5 text-right text-xs tabular-nums text-slate-400">{i + 1}</span>
-                      <div className="flex size-7 items-center justify-center rounded-md text-white" style={{ background: CAT_COLOR[sp?.category ?? "clean"] }}>
-                        {(() => { const I = CAT_ICON[sp?.category ?? "clean"] ?? Wand; return <I className="size-3.5" />; })()}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-medium text-slate-800">{s.label || sp?.label}</div>
-                        <div className="truncate text-xs text-slate-500">{sp?.label} {st?.status === "error" && <span className="text-rose-600">· {st.message}</span>}</div>
-                      </div>
-                      {s.origin === "ai" && <AIBadge />}
-                      <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
-                        <Switch checked={s.enabled} onCheckedChange={() => toggleStep(s)} />
-                        <Button variant="ghost" size="icon" onClick={() => move(i, -1)} disabled={i === 0} aria-label="Move up"><ArrowUp /></Button>
-                        <Button variant="ghost" size="icon" onClick={() => move(i, 1)} disabled={i === steps.length - 1} aria-label="Move down"><ArrowDown /></Button>
-                        <Button variant="ghost" size="icon" onClick={() => duplicate(s)} aria-label="Duplicate"><CopyIcon /></Button>
-                        <Button variant="ghost" size="icon" onClick={() => setConfirmDelete(s)} aria-label="Delete"><Trash2 /></Button>
-                      </div>
+                    <div key={s.id} className="flex items-center gap-1.5">
+                      <ArrowRight className="size-4 shrink-0 text-slate-300" />
+                      <button onClick={() => setStage(active ? null : s.id)} className={cn("relative flex min-w-[158px] items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-all", active ? "border-brand-500 bg-brand-50/60 shadow-[0_4px_14px_-8px_rgb(38_89_235)]" : "border-slate-200 bg-white hover:border-slate-300", n === 0 && !active && "opacity-60")}>
+                        <span className={cn("flex size-8 items-center justify-center rounded-lg", active ? "bg-brand-600 text-white" : "bg-brand-50 text-brand-600")}><s.icon className="size-4" /></span>
+                        <span className="min-w-0"><span className={cn("block text-[13px] font-semibold", active ? "text-brand-700" : "text-slate-900")}>{s.label}</span><span className="block text-[11px] text-slate-500">{sub}</span></span>
+                        {n > 0 && (err ? <CircleX className="absolute -right-1.5 -top-1.5 size-4 rounded-full bg-white text-rose-500" /> : <CircleCheck className="absolute -right-1.5 -top-1.5 size-4 rounded-full bg-white text-emerald-500" />)}
+                      </button>
                     </div>
                   );
                 })}
-              </div>
-            </div>
-          )}
-          {(busy === "reorder" || busy === "toggle" || busy === "delete" || busy === "dup") && <div className="absolute right-3 top-3"><Spinner /></div>}
-        </Card>
-
-        <Card className="flex h-[560px] flex-col overflow-hidden">
-          {spec && lib ? (
-            <>
-              <div className="flex items-start justify-between gap-2 border-b border-slate-100 px-4 py-3">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <Badge tone={sel?.kind === "draft" ? "brand" : "slate"}>{sel?.kind === "draft" ? "New step" : "Editing"}</Badge>
-                    {step?.origin === "ai" && <AIBadge label="AI recommended" />}
+                <div className="flex items-center gap-1.5">
+                  <ArrowRight className="size-4 shrink-0 text-slate-300" />
+                  <div className="relative flex min-w-[150px] items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+                    <span className="flex size-8 items-center justify-center rounded-lg bg-rose-50 text-dbx-500"><svg viewBox="0 0 24 24" className="size-5" fill="currentColor"><path d="M12 2 2 7.5l10 5.5 10-5.5L12 2Zm0 13.2L4.3 11 2 12.3l10 5.5 10-5.5L19.7 11 12 15.2Zm0 4.6-7.7-4.2L2 16.9l10 5.5 10-5.5-2.3-1.3-7.7 4.2Z" /></svg></span>
+                    <span className="min-w-0"><span className="block text-[13px] font-semibold text-slate-900">Output</span><span className="block max-w-[140px] truncate text-[11px] text-slate-500">{silver ? silver.name : "To Databricks"}</span></span>
+                    <CircleCheck className="absolute -right-1.5 -top-1.5 size-4 rounded-full bg-white text-emerald-500" />
                   </div>
-                  <div className="mt-1 font-semibold text-slate-900">{spec.label}</div>
-                  <div className="text-xs text-slate-500">{spec.description}</div>
                 </div>
-                <button onClick={() => setSel(null)} className="rounded p-1 text-slate-400 hover:bg-slate-100" aria-label="Close"><X className="size-4" /></button>
               </div>
-              <div className="min-h-0 flex-1 overflow-y-auto p-4 scrollbar-thin">
-                <ParamForm spec={spec} params={params} setParams={setParams} columns={columns} rightColumns={rightColumns} datasets={dsNames} lib={lib} currentDataset={datasetId} advanced={meta.mode === "advanced"} />
-              </div>
-              <div className="flex items-center gap-2 border-t border-slate-100 px-4 py-3">
-                {sel?.kind === "draft" ? (
-                  <>
-                    <Button variant="ghost" onClick={() => setSel(null)}>Cancel</Button>
-                    <Button variant="primary" className="ml-auto" onClick={addStep} loading={busy === "add-step"}><Plus /> Add to pipeline</Button>
-                  </>
-                ) : step ? (
-                  <>
-                    <Button variant="dangerSoft" size="sm" onClick={() => setConfirmDelete(step)}><Trash2 /> Delete</Button>
-                    <Button variant="ghost" size="sm" onClick={() => duplicate(step)}><CopyIcon /> Duplicate</Button>
-                    <Button variant="primary" className="ml-auto" onClick={saveStep} loading={busy === "save-step"} disabled={JSON.stringify(step.params) === JSON.stringify(params)}>
-                      <Pencil /> Save changes
-                    </Button>
-                  </>
-                ) : null}
-              </div>
-            </>
-          ) : (
-            <div className="flex h-full flex-col items-center justify-center p-6 text-center">
-              <div className="flex size-12 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-50 to-ai-50 text-brand-600 ring-1 ring-brand-100"><Eye className="size-5" /></div>
-              <div className="mt-3 font-semibold text-slate-900">Whole-pipeline preview</div>
-              <p className="mt-1 text-sm text-slate-500">Below you see the original data next to the result of all {steps.filter((s) => s.enabled).length} active steps. Select a step to preview it alone, or pick a transformation from the library.</p>
-              {pendingRecs > 0 && <Button className="mt-4" variant="ai" onClick={() => setRecsOpen(true)}><Sparkles /> Review {pendingRecs} AI recommendation{pendingRecs !== 1 ? "s" : ""}</Button>}
-            </div>
-          )}
-        </Card>
-      </div>
-
-      <Card className="p-5">
-        <div className="mb-3 flex items-center justify-between">
-          <div>
-            <div className="font-semibold text-slate-900">Before / After preview</div>
-            <div className="text-xs text-slate-500">
-              {sel?.kind === "draft" ? `Previewing new step: ${spec?.label}` : step ? `Previewing step: ${step.label || spec?.label}` : "Original data vs. all transformations"} · live on a sample of your data
-            </div>
+            )}
           </div>
-          {previewing && <div className="flex items-center gap-2 text-xs text-slate-500"><Spinner /> Updating preview…</div>}
-        </div>
-        {preview ? <div className={cn(previewing && "opacity-60 transition-opacity")}><BeforeAfter preview={preview} /></div> : <div className="skeleton h-64" />}
-      </Card>
 
-      <Dialog open={recsOpen} onOpenChange={setRecsOpen} title="AI transformation recommendations" description={`For ${dsNames.find((d) => d.id === datasetId)?.name}`} size="lg">
-        <RecommendationPanel pipeline={pipeline} mutate={mutate} datasetFilter={datasetId} />
-      </Dialog>
+          <div className="grid gap-4 xl:grid-cols-[240px_minmax(0,1fr)_320px]">
+            <Panel title="Transformation Library" className="h-[640px]" bodyClassName="flex flex-col">
+              <Library key={libCat ?? "all"} ref={searchRef} lib={lib} onPick={pickTransform} initialCat={libCat} />
+            </Panel>
+
+            <Panel
+              title={<>Applied Transformations ({allSteps.length}){stage && <span className="ml-2 text-[13px] font-normal text-brand-600">· {STAGES.find((s) => s.id === stage)?.label} <button className="underline" onClick={() => setStage(null)}>show all</button></span>}</>}
+              info="Steps run top to bottom. Drag to reorder, toggle to disable, or click to edit."
+              className="h-[640px]"
+              bodyClassName="flex min-h-0 gap-4"
+              actions={
+                <>
+                  <Button size="sm" variant="secondary" className="border-brand-300 text-brand-700" onClick={() => searchRef.current?.focus()}><Plus /> Add Transformation</Button>
+                  <Button size="sm" variant={reorderMode ? "primary" : "secondary"} onClick={() => setReorderMode((v) => !v)}><ArrowDownUp /> Reorder</Button>
+                  <Button size="sm" variant="secondary" className="text-rose-600" onClick={() => setConfirmClear(true)} disabled={!allSteps.length}><Trash2 /> Clear All</Button>
+                </>
+              }
+            >
+              <div className={cn("min-h-0 overflow-y-auto pr-1 scrollbar-thin", spec ? "hidden flex-1 2xl:block" : "flex-1")}>
+                <AppliedList steps={steps} lib={lib} selectedId={sel?.kind === "step" ? sel.id : undefined} status={status} reorderMode={reorderMode} view={view}
+                  onSelect={selectStep} onToggle={toggleStep} onDelete={setConfirmDelete} onMove={move} onDrop={dropAt} onDuplicate={duplicate} busy={!!busy} />
+              </div>
+              {spec && (
+                <div className="flex w-full min-w-0 flex-col border-slate-100 2xl:w-[300px] 2xl:shrink-0 2xl:border-l 2xl:pl-4">
+                  <SettingsPanel spec={spec} params={params} setParams={setParams} columns={columns} rightColumns={rightColumns} datasets={dsNames} lib={lib} datasetId={datasetId}
+                    advanced={meta.mode === "advanced"} mode={sel?.kind === "draft" ? "draft" : "step"} onCancel={() => setSel(null)} onSave={saveStep} onAdd={addStep}
+                    saving={busy === "add-step" || busy === "save-step"} dirty={!!step && JSON.stringify(step.params) !== JSON.stringify(params)} />
+                </div>
+              )}
+            </Panel>
+
+            <RecsPanel pipeline={pipeline} datasetId={datasetId} lib={lib} mutate={mutate} refreshing={refreshing}
+              onRefresh={async () => { setRefreshing(true); await mutate("analyze", () => api.post<Pipeline>(`/api/pipelines/${pipeline.id}/analyze`), { success: "Recommendations refreshed" }); setRefreshing(false); }} />
+          </div>
+
+          <div id="studio-preview" className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+            <DataPreviewPanel preview={pipePreview} stepPreview={sel ? stepPreview : null} stepLabel={sel?.kind === "step" ? step?.label ?? spec?.label : spec?.label} datasetName={dsName} loading={loadingPreview} />
+            <SummaryPanel preview={pipePreview} steps={allSteps} piiCount={meta.governance.pii.filter((p) => p.dataset_id === datasetId).length}
+              onExportSpec={() => download(`${dsName}_transformations.json`, JSON.stringify(allSteps.filter((s) => s.enabled).map((s) => ({ type: s.type, params: s.params, label: s.label })), null, 2), "application/json")}
+              onExportCsv={() => {
+                const rows = pipePreview?.after.rows ?? [];
+                const cols = (pipePreview?.after.columns ?? []).map((c) => c.name);
+                const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+                download(`${dsName}_preview.csv`, [cols.map(esc).join(","), ...rows.map((r) => cols.map((c) => esc(typeof r[c] === "object" && r[c] !== null ? JSON.stringify(r[c]) : r[c])).join(","))].join("\n"), "text/csv");
+              }} />
+          </div>
+        </>
+      )}
+
       <ConfirmDialog open={!!confirmDelete} onOpenChange={(v) => !v && setConfirmDelete(null)} title="Delete this step?" description={<>“{confirmDelete?.label}” will be removed from the pipeline. You can undo this.</>} confirmLabel="Delete step" destructive onConfirm={() => confirmDelete && remove(confirmDelete)} />
+      <ConfirmDialog open={confirmClear} onOpenChange={setConfirmClear} title="Clear all transformations?" description={<>All {allSteps.length} steps for <b>{dsName}</b> will be removed and their AI recommendations become available again. You can undo this.</>}
+        confirmLabel="Clear all" destructive onConfirm={async () => { setConfirmClear(false); setSel(null); await mutate("clear", () => api.post<Pipeline>(`/api/pipelines/${pipeline.id}/transformations/clear`, { dataset_id: datasetId }), { success: "Transformations cleared" }); }} />
+      {busy === "reorder" && <div className="fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm shadow-lift"><Sparkles className="size-4 animate-pulse text-brand-600" /> Reordering…</div>}
     </div>
   );
 }

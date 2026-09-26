@@ -75,8 +75,8 @@ export function ColumnDetail({ col, onClose }: { col: ColumnProfile; onClose: ()
                     <CartesianGrid vertical={false} stroke="#eef0f5" />
                     <XAxis dataKey="bin" tick={{ fontSize: 10, fill: "#94a3b8" }} tickLine={false} axisLine={false} tickFormatter={(v) => (numeric ? Intl.NumberFormat(undefined, { notation: "compact" }).format(v) : String(v))} />
                     <YAxis tick={{ fontSize: 10, fill: "#94a3b8" }} tickLine={false} axisLine={false} />
-                    <Tooltip cursor={{ fill: "#eef2ff" }} contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }} formatter={(v) => [fmtNumber(Number(v)), "Records"]} labelFormatter={(l) => (numeric ? `≥ ${fmtNumber(Number(l), 2)}` : String(l))} />
-                    <Bar dataKey="count" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                    <Tooltip cursor={{ fill: "#eff4ff" }} contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }} formatter={(v) => [fmtNumber(Number(v)), "Records"]} labelFormatter={(l) => (numeric ? `≥ ${fmtNumber(Number(l), 2)}` : String(l))} />
+                    <Bar dataKey="count" fill="#2659eb" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>

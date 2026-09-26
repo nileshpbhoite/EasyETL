@@ -1,14 +1,14 @@
 "use client";
 
-import { Cable, CalendarClock, CircleCheck, FileStack, Globe, HardDriveDownload, Radio, RefreshCw, ShieldAlert, Sparkles, Star, Zap } from "lucide-react";
+import { ArrowRight, Bot, Cable, CalendarClock, FileStack, Globe, HardDriveDownload, Radio, RefreshCw, ShieldAlert, Sparkles, Star, Workflow, Zap } from "lucide-react";
 import { useState } from "react";
-import { AIBadge, Badge, Button, Callout, Card, CardHeader, Field, Input, Segmented, Select, Switch } from "@/components/ui";
+import { Badge, Button, Callout, Card, CardHeader, Dialog, Field, Input, Segmented, Select, Switch } from "@/components/ui";
 import { api } from "@/lib/api";
 import type { IngestionConfig, Pipeline } from "@/lib/types";
 import { cn, fmtMoney } from "@/lib/utils";
 import { useApi } from "@/lib/hooks";
 import type { StepProps } from "@/app/(app)/pipelines/[id]/page";
-import { NextButton, StepHeader, WizardFooter } from "./common";
+import { CheckItem, NextButton, SectionCard, WizardFooter } from "./common";
 
 export const ENGINES: Record<string, { label: string; icon: React.ComponentType<{ className?: string }>; plain: string; best: string }> = {
   auto_loader: { label: "Auto Loader", icon: FileStack, plain: "Watches a folder and loads only new files, automatically.", best: "Recurring files (CSV, JSON, XML, Excel exports)" },
@@ -18,6 +18,8 @@ export const ENGINES: Record<string, { label: string; icon: React.ComponentType<
   jdbc: { label: "JDBC", icon: RefreshCw, plain: "Reads tables directly from a database on a schedule.", best: "Databases without CDC" },
   rest_api: { label: "REST / API ingestion", icon: Globe, plain: "A scheduled job pages through an API and lands the results.", best: "Web APIs & SaaS without a managed connector" },
 };
+
+const SHORT: Record<string, string> = { auto_loader: "Recurring files", lakeflow_connect: "Apps & databases", batch: "One-time", streaming: "Near real-time", jdbc: "If data is in a database", rest_api: "Web APIs" };
 
 const FREQ = [
   { value: "continuous", label: "Continuous" }, { value: "every_15_min", label: "Every 15 minutes" }, { value: "hourly", label: "Hourly" },
@@ -37,53 +39,91 @@ export function ConfigureStep({ pipeline, mutate, busy, goTo }: StepProps) {
   const rec = ing.recommended_engine ?? ing.engine;
   const recSpec = ENGINES[rec];
   const current = ENGINES[ing.engine];
+  const why = [
+    ...ing.rationale.split(/(?<=\.)\s+/).filter((x) => x.length > 12).slice(0, 2),
+    ...ing.notes,
+    ing.schema_evolution !== "none" ? "Schema evolution is enabled to handle future changes safely." : "",
+    ing.mode === "incremental" ? "Incremental loading keeps runs fast and cost predictable." : "",
+    "Lakeflow provides built-in monitoring, retries and error handling.",
+  ].filter(Boolean).slice(0, 6);
   const incFields = Array.from(new Set(meta.source.datasets.filter((d) => d.selected).flatMap((d) => (d.columns ?? []).filter((c) => ["date", "timestamp"].includes(c.semantic_type ?? "")).map((c) => c.name))));
 
   return (
     <div className="animate-fade-in">
-      <StepHeader eyebrow="Step 4 · Configure" title="How should data get into Databricks?" description="AI analyzed your source and chose the right Databricks ingestion method. You don't need to know these technologies — but you can change anything." />
-      <div className="grid gap-6 xl:grid-cols-3">
-        <div className="space-y-6 xl:col-span-2">
-          <Card className="overflow-hidden">
-            <div className="ai-surface p-6">
-              <div className="flex flex-wrap items-start gap-4">
-                <div className="flex size-14 items-center justify-center rounded-2xl gradient-ai text-white shadow-lg">{recSpec && <recSpec.icon className="size-7" />}</div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <Badge tone="amber"><Star className="fill-amber-400 text-amber-400" /> Recommended</Badge>
-                    <AIBadge />
-                  </div>
-                  <div className="mt-1.5 text-2xl font-semibold text-slate-900">{recSpec?.label}</div>
-                  <p className="mt-1 text-sm text-slate-600">{ing.rationale}</p>
-                  {ing.notes.length > 0 && (
-                    <ul className="mt-3 space-y-1">
-                      {ing.notes.map((n) => <li key={n} className="flex gap-2 text-sm text-slate-600"><CircleCheck className="mt-0.5 size-4 shrink-0 text-emerald-500" /> {n}</li>)}
-                    </ul>
-                  )}
+      <SectionCard n={4} title="AI Recommendations" subtitle="Based on your data analysis, here are the best practices for getting data into Databricks" help="You don't need to know these technologies — EasyETL picks the right one, and you can change anything." className="mb-5">
+        <div className="rounded-2xl border border-slate-200 p-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="flex size-11 items-center justify-center rounded-xl bg-brand-50 text-brand-600"><Bot className="size-6" /></span>
+            <div className="min-w-0 flex-1">
+              <div className="text-[16px] font-semibold text-brand-700">Recommended Configuration</div>
+              <div className="text-[12.5px] text-slate-500">Based on your data type, volume and quality analysis</div>
+            </div>
+            {ing.engine === rec ? <span className="rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">Best Choice</span>
+              : <Button size="sm" variant="primary" onClick={() => update({ engine: rec })}><Sparkles /> Use Recommendation</Button>}
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            {[
+              { icon: recSpec?.icon ?? FileStack, label: "Ingestion Method", value: current?.label ?? ing.engine, desc: `Best for ${current?.best.toLowerCase() ?? "this source"}` },
+              { icon: RefreshCw, label: "Load Mode", value: ing.mode === "incremental" ? "Incremental" : "Full refresh", desc: ing.mode === "incremental" ? "Loads only new or changed data each run" : "Reloads everything on every run" },
+              { icon: Workflow, label: "Processing", value: "Lakeflow Declarative Pipelines", desc: "For scalable, reliable processing with built-in quality checks" },
+              meta.source.category === "file" || meta.source.category === "cloud_storage"
+                ? { icon: HardDriveDownload, label: "File Handling", value: "Land files in a Unity Catalog volume", desc: "Auto Loader processes new files incrementally" }
+                : { icon: CalendarClock, label: "Schedule", value: FREQ.find((f) => f.value === ing.frequency)?.label ?? ing.frequency, desc: ing.cdc ? "Changes captured with CDC" : "Tuned to how often the source changes" },
+            ].map((t) => (
+              <div key={t.label} className="flex gap-3 rounded-xl border border-slate-200 p-3.5">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600"><t.icon className="size-[18px]" /></span>
+                <div className="min-w-0">
+                  <div className="text-[11.5px] text-slate-500">{t.label}</div>
+                  <div className="text-[14px] font-semibold text-slate-900">{t.value}</div>
+                  <div className="text-[12px] text-slate-500">{t.desc}</div>
                 </div>
               </div>
-              <div className="mt-5 flex flex-wrap gap-2">
-                {ing.engine === rec ? (
-                  <Badge tone="green" className="px-3 py-1 text-xs"><CircleCheck /> Using recommendation</Badge>
-                ) : (
-                  <Button variant="ai" onClick={() => update({ engine: rec })}><Sparkles /> Use Recommendation</Button>
-                )}
-                <Button variant="secondary" onClick={() => setChoosing((v) => !v)}>Choose Another Method</Button>
-              </div>
+            ))}
+          </div>
+          <div className="mt-4 grid gap-5 border-t border-slate-100 pt-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+            <div>
+              <div className="mb-2 text-[14px] font-semibold text-slate-900">Why this recommendation?</div>
+              <ul className="space-y-2">
+                {why.map((w) => <CheckItem key={w}>{w}</CheckItem>)}
+              </ul>
             </div>
-            {choosing && (
-              <div className="grid gap-3 border-t border-ai-100 p-5 sm:grid-cols-2 lg:grid-cols-3">
-                {Object.entries(ENGINES).map(([id, e]) => (
-                  <button key={id} onClick={() => { void update({ engine: id }); setChoosing(false); }} className={cn("rounded-xl border p-4 text-left transition-all hover:shadow-card", ing.engine === id ? "border-brand-500 bg-brand-50/50" : "border-slate-200")}>
-                    <div className="flex items-center gap-2"><e.icon className="size-4 text-brand-600" /><span className="font-semibold">{e.label}</span>{id === rec && <Star className="size-3.5 fill-amber-400 text-amber-400" />}</div>
-                    <div className="mt-1 text-xs text-slate-600">{e.plain}</div>
-                    <div className="mt-2 text-[11px] text-slate-400">Best for: {e.best}</div>
-                  </button>
+            <div className="rounded-xl border border-slate-200 p-3.5">
+              <div className="mb-2 text-[14px] font-semibold text-slate-900">Alternative Options</div>
+              <div className="space-y-1.5">
+                {Object.entries(ENGINES).filter(([id]) => id !== rec).map(([id, e]) => (
+                  <label key={id} className="flex cursor-pointer items-center gap-2.5 rounded-md px-1 py-1 text-[13px] text-slate-700 hover:bg-slate-50">
+                    <input type="radio" name="engine" checked={ing.engine === id} onChange={() => update({ engine: id })} className="size-4 accent-brand-600" />
+                    {e.label} <span className="text-xs text-slate-400">({SHORT[id]})</span>
+                  </label>
                 ))}
+                {ing.engine !== rec && (
+                  <label className="flex cursor-pointer items-center gap-2.5 rounded-md px-1 py-1 text-[13px] text-slate-700 hover:bg-slate-50">
+                    <input type="radio" name="engine" checked={false} onChange={() => update({ engine: rec })} className="size-4 accent-brand-600" />
+                    Back to {recSpec?.label} <Star className="size-3.5 fill-amber-400 text-amber-400" />
+                  </label>
+                )}
               </div>
-            )}
-          </Card>
-
+              <button onClick={() => setChoosing(true)} className="mt-2 inline-flex items-center gap-1 text-[13px] font-medium text-brand-600 hover:underline">Compare options <ArrowRight className="size-3.5" /></button>
+            </div>
+          </div>
+          <div className="mt-4 flex justify-end">
+            <Button variant="primary" size="lg" onClick={async () => { await mutate("complete", () => api.patch<Pipeline>(`/api/pipelines/${pipeline.id}`, { complete_step: "configure" }), { silent: true }); goTo("design"); }}>Continue <ArrowRight /></Button>
+          </div>
+        </div>
+      </SectionCard>
+      <Dialog open={choosing} onOpenChange={setChoosing} title="Compare ingestion methods" description="All run natively on Databricks. The recommended option is marked with a star." size="lg">
+        <div className="grid gap-3 sm:grid-cols-2">
+          {Object.entries(ENGINES).map(([id, e]) => (
+            <button key={id} onClick={() => { void update({ engine: id }); setChoosing(false); }} className={cn("rounded-xl border p-4 text-left transition-all hover:shadow-card", ing.engine === id ? "border-brand-500 bg-brand-50/50" : "border-slate-200")}>
+              <div className="flex items-center gap-2"><e.icon className="size-4 text-brand-600" /><span className="font-semibold">{e.label}</span>{id === rec && <Star className="size-3.5 fill-amber-400 text-amber-400" />}{ing.engine === id && <Badge tone="brand">Selected</Badge>}</div>
+              <div className="mt-1 text-xs text-slate-600">{e.plain}</div>
+              <div className="mt-2 text-[11px] text-slate-400">Best for: {e.best}</div>
+            </button>
+          ))}
+        </div>
+      </Dialog>
+      <div className="grid gap-6 xl:grid-cols-3">
+        <div className="space-y-6 xl:col-span-2">
           <Card>
             <CardHeader title="Loading & schedule" description="Chosen by AI — adjust with simple controls." icon={<CalendarClock />} />
             <div className="grid gap-5 p-5 md:grid-cols-2">

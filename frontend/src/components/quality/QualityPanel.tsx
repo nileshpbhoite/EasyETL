@@ -103,7 +103,7 @@ export function QualityPanel({ pipeline, mutate }: { pipeline: Pipeline; mutate:
                     <PolarAngleAxis dataKey="dim" tick={{ fontSize: 10, fill: "#64748b" }} />
                     <Tooltip contentStyle={{ borderRadius: 8, fontSize: 12 }} formatter={(v) => `${v}%`} />
                     <Radar name="Before" dataKey="before" stroke="#94a3b8" fill="#94a3b8" fillOpacity={0.15} />
-                    <Radar name="After" dataKey="after" stroke="#6366f1" fill="#6366f1" fillOpacity={0.3} />
+                    <Radar name="After" dataKey="after" stroke="#2659eb" fill="#2659eb" fillOpacity={0.3} />
                   </RadarChart>
                 </ResponsiveContainer>
               </div>

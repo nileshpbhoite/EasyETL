@@ -1,8 +1,8 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, Boxes, Cloud, Database, FileUp, Globe, HardDrive, LifeBuoy, Megaphone, Server, Share2, Snowflake, Users } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, CircleHelp, Boxes, Cloud, Database, FileUp, Globe, HardDrive, LifeBuoy, Megaphone, Server, Share2, Snowflake, Users } from "lucide-react";
 import type { ReactNode } from "react";
-import { Button } from "@/components/ui";
+import { Button, Tooltip } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
 export function StepHeader({ title, description, actions, eyebrow }: { title: ReactNode; description?: ReactNode; actions?: ReactNode; eyebrow?: ReactNode }) {
@@ -20,20 +20,96 @@ export function StepHeader({ title, description, actions, eyebrow }: { title: Re
 
 export function WizardFooter({ onBack, backLabel = "Back", primary, secondary, note }: { onBack?: () => void; backLabel?: string; primary?: ReactNode; secondary?: ReactNode; note?: ReactNode }) {
   return (
-    <div className="sticky bottom-0 z-10 -mx-6 mt-8 border-t border-slate-200 bg-white/90 px-6 py-3 backdrop-blur md:-mx-8 md:px-8">
-      <div className="flex items-center gap-3">
-        {onBack && (
-          <Button variant="ghost" onClick={onBack}>
-            <ArrowLeft /> {backLabel}
-          </Button>
-        )}
-        {note && <div className="text-sm text-slate-500">{note}</div>}
-        <div className="ml-auto flex items-center gap-2">
-          {secondary}
-          {primary}
-        </div>
+    <div className="mt-6 flex items-center gap-3 rounded-2xl border border-slate-200/80 bg-white px-4 py-3 shadow-card">
+      {onBack && (
+        <Button variant="ghost" onClick={onBack}>
+          <ArrowLeft /> {backLabel}
+        </Button>
+      )}
+      {note && <div className="text-sm text-slate-500">{note}</div>}
+      <div className="ml-auto flex items-center gap-2">
+        {secondary}
+        {primary}
       </div>
     </div>
+  );
+}
+
+/** Card with the numbered header used throughout the wizard ("1  Select Source"). */
+export function SectionCard({ n, title, subtitle, actions, children, className, bodyClassName, help }: {
+  n?: number | string;
+  title: ReactNode;
+  subtitle?: ReactNode;
+  actions?: ReactNode;
+  children?: ReactNode;
+  className?: string;
+  bodyClassName?: string;
+  help?: ReactNode;
+}) {
+  return (
+    <section className={cn("rounded-2xl border border-slate-200/80 bg-white shadow-card", className)}>
+      <header className="flex items-start gap-3 px-5 pb-3 pt-4">
+        {n !== undefined && <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-brand-600 text-sm font-semibold text-white shadow-[0_4px_12px_-4px_rgb(38_89_235)]">{n}</span>}
+        <div className="min-w-0 flex-1">
+          <h3 className="text-[17px] font-semibold leading-tight text-slate-900">{title}</h3>
+          {subtitle && <p className="mt-0.5 text-[13px] text-slate-500">{subtitle}</p>}
+        </div>
+        {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+        {help && (
+          <Tooltip content={help}>
+            <button type="button" className="mt-0.5 text-slate-400 hover:text-slate-600" aria-label="Help"><CircleHelp className="size-[18px]" /></button>
+          </Tooltip>
+        )}
+      </header>
+      <div className={cn("px-5 pb-5", bodyClassName)}>{children}</div>
+    </section>
+  );
+}
+
+/** Underlined text tabs used inside cards. */
+export function LineTabs<T extends string>({ value, onChange, tabs, className }: { value: T; onChange: (v: T) => void; tabs: { value: T; label: ReactNode }[]; className?: string }) {
+  return (
+    <div className={cn("flex gap-1 overflow-x-auto border-b border-slate-200 scrollbar-thin", className)}>
+      {tabs.map((t) => (
+        <button
+          key={t.value}
+          type="button"
+          onClick={() => onChange(t.value)}
+          className={cn("-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2 text-[13px] font-medium transition-colors", value === t.value ? "border-brand-600 text-brand-700" : "border-transparent text-slate-500 hover:text-slate-800")}
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Pill tabs (Data Preview | Transform | …). */
+export function PillTabs<T extends string>({ value, onChange, tabs, className }: { value: T; onChange: (v: T) => void; tabs: { value: T; label: ReactNode }[]; className?: string }) {
+  return (
+    <div className={cn("flex flex-wrap gap-1.5", className)}>
+      {tabs.map((t) => (
+        <button
+          key={t.value}
+          type="button"
+          onClick={() => onChange(t.value)}
+          className={cn("rounded-lg px-3.5 py-2 text-[13px] font-medium transition-all", value === t.value ? "bg-brand-600 text-white shadow-[0_4px_12px_-6px_rgb(38_89_235)]" : "bg-slate-50 text-slate-600 hover:bg-slate-100")}
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function CheckItem({ children, tone = "green" }: { children: ReactNode; tone?: "green" | "blue" }) {
+  return (
+    <li className="flex gap-2.5 text-[13px] text-slate-700">
+      <span className={cn("mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full text-white", tone === "green" ? "bg-emerald-500" : "bg-brand-600")}>
+        <Check className="size-2.5" strokeWidth={3.5} />
+      </span>
+      <span>{children}</span>
+    </li>
   );
 }
 

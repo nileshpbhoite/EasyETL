@@ -75,7 +75,7 @@ export function LineageGraph({ data, height = 620, focus }: { data: LineageData;
     let extra = 0;
     data.nodes.forEach((n) => { if (!pos[n.id]) pos[n.id] = { x: (lanes + extra++) * COL, y: ROW }; });
     const nodes: Node[] = data.nodes.map((n) => ({ id: n.id, type: "l", position: pos[n.id], data: { label: n.label, kind: n.type, selected: sel === n.id } }));
-    const edges: Edge[] = data.edges.map((e, i) => ({ id: `e${i}`, source: e.source, target: e.target, style: { stroke: "#c7d2fe", strokeWidth: 1.5 }, animated: sel !== null && (e.source === sel || e.target === sel) }));
+    const edges: Edge[] = data.edges.map((e, i) => ({ id: `e${i}`, source: e.source, target: e.target, style: { stroke: "#c0d4fe", strokeWidth: 1.5 }, animated: sel !== null && (e.source === sel || e.target === sel) }));
     return { nodes, edges, width: lanes * COL };
   }, [data, sel]);
   const selected = data.nodes.find((n) => n.id === sel);

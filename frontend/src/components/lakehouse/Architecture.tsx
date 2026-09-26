@@ -77,7 +77,7 @@ export function Architecture({ meta, onSelect, selected, height = 460 }: { meta:
     <div className="grid-bg overflow-hidden rounded-xl border border-slate-200" style={{ height: Math.min(height, laneH + 150) }}>
       <ReactFlow
         nodes={[...lanes, ...nodes]}
-        edges={edges.map((e) => ({ ...e, animated: true, style: { stroke: "#a5b4fc", strokeWidth: 1.5 } }))}
+        edges={edges.map((e) => ({ ...e, animated: true, style: { stroke: "#93b4fd", strokeWidth: 1.5 } }))}
         nodeTypes={nodeTypes}
         fitView
         fitViewOptions={{ padding: 0.08, maxZoom: 1 }}

@@ -14,6 +14,7 @@ import { DesignStep } from "@/components/wizard/DesignStep";
 import { ReviewStep } from "@/components/wizard/ReviewStep";
 import { DeployStep } from "@/components/wizard/DeployStep";
 import { MonitoringDashboard } from "@/components/monitoring/MonitoringDashboard";
+import { SaveTemplateDialog } from "@/components/wizard/SaveTemplateDialog";
 import { api } from "@/lib/api";
 import { showError, useApi, usePipeline } from "@/lib/hooks";
 import { useUI } from "@/lib/store";
@@ -44,33 +45,6 @@ function HistoryDialog({ id, open, onOpenChange, onRestore }: { id: string; open
             {i === 0 ? <Badge tone="green">Current</Badge> : <Button size="sm" variant="ghost" onClick={() => onRestore(v.version)}>Restore</Button>}
           </div>
         ))}
-      </div>
-    </Dialog>
-  );
-}
-
-function SaveTemplateDialog({ id, open, onOpenChange, defaultName }: { id: string; open: boolean; onOpenChange: (v: boolean) => void; defaultName: string }) {
-  const [name, setName] = useState(defaultName);
-  const [description, setDescription] = useState("");
-  const [saving, setSaving] = useState(false);
-  const save = async () => {
-    setSaving(true);
-    try {
-      await api.post(`/api/pipelines/${id}/save-template`, { name, description, category: "Custom" });
-      toast.success("Saved as template", { description: "Your team can now start pipelines from it." });
-      onOpenChange(false);
-    } catch (e) {
-      showError(e);
-    } finally {
-      setSaving(false);
-    }
-  };
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange} title="Save as Template" description="Saves transformation patterns, ingestion, Lakehouse, governance and quality settings — never data or credentials." size="sm"
-      footer={<><Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button><Button variant="primary" onClick={save} loading={saving} disabled={!name}>Save template</Button></>}>
-      <div className="space-y-4">
-        <Field label="Template name" required><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
-        <Field label="Description"><Textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What is this template good for?" /></Field>
       </div>
     </Dialog>
   );
@@ -122,8 +96,8 @@ function Wizard() {
 
   return (
     <div className="flex min-h-full flex-col">
-      <div className="sticky top-0 z-10 border-b border-slate-200/80 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-3 px-6 pt-4 md:px-8">
+      <div className="mx-auto w-full max-w-[1680px] px-5 pt-5 md:px-6">
+        <div className="mb-3 flex flex-wrap items-center gap-3">
           <div className="min-w-0 flex-1">
             {editingName ? (
               <input
@@ -132,26 +106,26 @@ function Wizard() {
                 onChange={(e) => setName(e.target.value)}
                 onBlur={saveName}
                 onKeyDown={(e) => e.key === "Enter" && saveName()}
-                className="w-full max-w-lg rounded-md border border-brand-300 px-2 py-0.5 text-xl font-semibold outline-none ring-2 ring-brand-100"
+                className="w-full max-w-lg rounded-md border border-brand-300 bg-white px-2 py-0.5 text-lg font-semibold outline-none ring-2 ring-brand-100"
               />
             ) : (
-              <button onClick={() => { setName(pipeline.name); setEditingName(true); }} className="group flex items-center gap-2 text-xl font-semibold tracking-tight text-slate-900">
-                {pipeline.name}
-                <Pencil className="size-3.5 text-slate-300 group-hover:text-slate-500" />
-              </button>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <button onClick={() => { setName(pipeline.name); setEditingName(true); }} className="group flex items-center gap-2 text-lg font-semibold tracking-tight text-slate-900">
+                  {pipeline.name}
+                  <Pencil className="size-3.5 text-slate-300 group-hover:text-slate-500" />
+                </button>
+                <span className="flex items-center gap-2 text-xs text-slate-500">
+                  {busy ? (
+                    <span className="flex items-center gap-1 text-brand-600"><LoaderCircle className="size-3 animate-spin" /> Saving…</span>
+                  ) : (
+                    <span className="flex items-center gap-1"><CloudCheck className="size-3.5 text-emerald-500" /> Saved · v{pipeline.version} · {timeAgo(pipeline.updated_at)}</span>
+                  )}
+                  <span>·</span>
+                  <span className="capitalize">{pipeline.environment}</span>
+                  {meta.deployment.status === "deployed" && <Badge tone="green"><Check /> Deployed</Badge>}
+                </span>
+              </div>
             )}
-            <div className="mt-0.5 flex items-center gap-2 text-xs text-slate-500">
-              {busy ? (
-                <span className="flex items-center gap-1 text-brand-600"><LoaderCircle className="size-3 animate-spin" /> Saving…</span>
-              ) : (
-                <span className="flex items-center gap-1"><CloudCheck className="size-3.5 text-emerald-500" /> Saved · v{pipeline.version} · {timeAgo(pipeline.updated_at)}</span>
-              )}
-              <span>·</span>
-              <span>{pipeline.environment}</span>
-              {meta.deployment.status === "deployed" && (
-                <Badge tone="green"><Check /> Deployed</Badge>
-              )}
-            </div>
           </div>
           <Segmented
             size="sm"
@@ -169,11 +143,9 @@ function Wizard() {
             <LayoutTemplate /> Save as Template
           </Button>
         </div>
-        <div className="mx-auto max-w-[1600px] px-4 py-2 md:px-6">
-          <Stepper current={step} completed={meta.completed_steps} onSelect={goTo} deployed={meta.deployment.status === "deployed"} />
-        </div>
+        <Stepper current={step} completed={meta.completed_steps} onSelect={goTo} deployed={meta.deployment.status === "deployed"} />
       </div>
-      <div className="mx-auto w-full max-w-[1600px] flex-1 px-6 py-6 md:px-8">
+      <div className="mx-auto w-full max-w-[1680px] flex-1 px-5 py-5 md:px-6">
         {step === "source" && <SourceStep {...props} />}
         {step === "analyze" && <AnalyzeStep {...props} />}
         {step === "transform" && <TransformStep {...props} />}

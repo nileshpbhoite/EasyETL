@@ -1,13 +1,13 @@
 export type Step = "source" | "analyze" | "transform" | "configure" | "design" | "review" | "deploy" | "monitor";
 export const STEPS: { id: Step; label: string; hint: string }[] = [
-  { id: "source", label: "Source", hint: "Connect or upload data" },
-  { id: "analyze", label: "Analyze", hint: "AI profiles your data" },
-  { id: "transform", label: "Transform", hint: "Clean & modernize" },
-  { id: "configure", label: "Configure", hint: "Ingestion settings" },
+  { id: "source", label: "Source", hint: "Connect data" },
+  { id: "analyze", label: "Analyze", hint: "Profile & insights" },
+  { id: "transform", label: "Transform", hint: "Cleanse & enrich" },
+  { id: "configure", label: "Configure", hint: "Ingestion & settings" },
   { id: "design", label: "Design", hint: "Lakehouse & governance" },
-  { id: "review", label: "Review", hint: "Readiness check" },
-  { id: "deploy", label: "Deploy", hint: "One-click to Databricks" },
-  { id: "monitor", label: "Monitor", hint: "Health & AI alerts" },
+  { id: "review", label: "Review", hint: "AI recommendations" },
+  { id: "deploy", label: "Deploy", hint: "Create & deploy" },
+  { id: "monitor", label: "Monitor", hint: "Health & alerts" },
 ];
 
 export interface DatasetRef {
@@ -283,6 +283,7 @@ export interface PipelineSummary {
   source_label: string;
   source_connector?: string | null;
   source_category?: string;
+  source_format?: string | null;
   dataset_count: number;
   target_label: string;
   current_step: Step;
@@ -408,6 +409,9 @@ export interface PreviewMetrics {
   duplicates: number;
   invalid_values: number;
   quality_score: number;
+  quality?: { score: number; completeness: number; validity: number; uniqueness: number; consistency: number };
+  invalid_by_type?: Record<string, { invalid: number; values: number; pct: number }>;
+  format_columns?: { consistent: number; total: number };
 }
 
 export interface Preview {

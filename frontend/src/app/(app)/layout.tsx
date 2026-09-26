@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { AssistantPanel } from "@/components/shell/AssistantPanel";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { Topbar } from "@/components/shell/Topbar";
@@ -16,10 +16,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, [router]);
   if (!ready) return <div className="h-screen bg-canvas" />;
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="app-bg flex h-screen overflow-hidden">
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar />
+        <Suspense fallback={<div className="h-16 border-b border-slate-200 bg-white" />}>
+          <Topbar />
+        </Suspense>
         <main className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">{children}</main>
       </div>
       <AssistantPanel />

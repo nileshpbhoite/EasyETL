@@ -1,7 +1,8 @@
 "use client";
 
 import { CircleCheck, CircleX, Code, ExternalLink, FileCode, LoaderCircle, Rocket, ShieldCheck } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Badge, Button, Callout, Card, CardHeader, Dialog, ErrorBox, Segmented } from "@/components/ui";
 import { api, getStoredUser, type ApiError } from "@/lib/api";
@@ -9,7 +10,8 @@ import { useUI } from "@/lib/store";
 import type { Pipeline } from "@/lib/types";
 import { cn, timeAgo } from "@/lib/utils";
 import type { StepProps } from "@/app/(app)/pipelines/[id]/page";
-import { NextButton, StepHeader, WizardFooter } from "./common";
+import { Cylinder } from "@/components/lakehouse/Cylinder";
+import { NextButton, SectionCard, WizardFooter } from "./common";
 
 const STEPS = [
   "Validating pipeline metadata", "Generating Databricks bundle", "Creating Unity Catalog catalog & schemas", "Uploading runtime and configuration",
@@ -78,36 +80,53 @@ export function DeployStep({ pipeline, mutate, busy, goTo }: StepProps) {
     }
   };
 
+  const params = useSearchParams();
+  const router = useRouter();
+  const autostarted = useRef(false);
+  useEffect(() => {
+    if (autostarted.current || params.get("autostart") !== "1") return;
+    autostarted.current = true;
+    router.replace(`/pipelines/${pipeline.id}?step=deploy`, { scroll: false });
+    if (canDeploy && meta.health_check.ready && dep.status !== "deployed") deploy();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params]);
+
   const deploying = progress >= 0 && progress < STEPS.length && dep.status !== "deployed";
   const done = dep.status === "deployed" && !deploying;
   const tables = dep.resources.filter((r) => r.type === "table");
 
   return (
     <div className="animate-fade-in">
-      <StepHeader eyebrow="Step 7 · Deploy" title="One-click deployment to Databricks" description="EasyETL generates and deploys everything — Unity Catalog, Lakeflow pipeline, jobs, governance — from your validated metadata." />
       <div className="grid gap-6 xl:grid-cols-3">
         <div className="space-y-6 xl:col-span-2">
-          <Card className="overflow-hidden">
-            <div className="relative overflow-hidden bg-navy-950 px-8 py-10 text-white">
-              <div className="absolute inset-0 opacity-50" style={{ backgroundImage: "radial-gradient(500px 250px at 85% 0%, rgba(255,54,33,.35), transparent 60%), radial-gradient(500px 300px at 0% 100%, rgba(99,102,241,.35), transparent 60%)" }} />
+          <SectionCard n={7} title="Create & Deploy" subtitle="EasyETL generates and deploys everything — Unity Catalog, Lakeflow pipeline, jobs, governance — from your validated metadata." bodyClassName="p-0">
+            <div className={cn("relative overflow-hidden border-b px-6 py-7", done ? "border-emerald-100 bg-emerald-50/70" : "border-brand-100 bg-gradient-to-br from-brand-50 to-white")}>
               <div className="relative flex flex-wrap items-center gap-6">
-                <div className={cn("flex size-16 items-center justify-center rounded-2xl bg-dbx-500 shadow-lg", deploying && "animate-pulse")}>
+                <div className={cn("flex size-14 items-center justify-center rounded-2xl text-white shadow-lg", done ? "bg-emerald-500" : "gradient-primary", deploying && "animate-pulse")}>
                   {done ? <CircleCheck className="size-8" /> : deploying ? <LoaderCircle className="size-8 animate-spin" /> : <Rocket className="size-8" />}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-2xl font-semibold">{done ? "Your pipeline is live on Databricks" : deploying ? "Deploying to Databricks…" : "Ready to deploy"}</div>
-                  <div className="mt-1 text-sm text-slate-300">
+                  <div className="text-xl font-semibold text-slate-900">{done ? "Your pipeline is live on Databricks" : deploying ? "Deploying to Databricks…" : "Ready to deploy"}</div>
+                  <div className="mt-1 text-sm text-slate-600">
                     {done ? `Deployed ${timeAgo(dep.deployed_at)} to ${dep.target_environment}${dep.mode === "mock" ? " · simulation mode (no workspace connected)" : ""}` : `${meta.lakehouse.tables.filter((t) => t.enabled).length} tables · ${meta.transformations.filter((t) => t.enabled).length} transformations · ${meta.quality_rules.filter((r) => r.enabled).length} quality rules`}
                   </div>
                 </div>
                 {!deploying && (
                   <div className="flex flex-col items-end gap-2">
                     <Segmented size="sm" value={env} onChange={setEnv} options={[{ value: "development", label: "Development" }, { value: "staging", label: "Staging" }, { value: "production", label: "Production" }]} />
-                    <Button variant="databricks" size="lg" onClick={deploy} disabled={!canDeploy || !meta.health_check.ready}>
+                    <Button variant="primary" size="lg" onClick={deploy} disabled={!canDeploy || !meta.health_check.ready}>
                       <Rocket /> {done ? "Redeploy to Databricks" : "Deploy to Databricks"}
                     </Button>
                   </div>
                 )}
+              </div>
+              <div className="relative mt-5 flex items-center gap-3 text-xs text-slate-500">
+                {(["bronze", "silver", "gold"] as const).map((l, i) => (
+                  <div key={l} className="flex items-center gap-3">
+                    <div className="flex items-center gap-1.5"><Cylinder layer={l} size={26} /><span className="font-medium capitalize text-slate-700">{l}</span><span>{meta.lakehouse.tables.filter((t) => t.enabled && t.layer === l).length} tables</span></div>
+                    {i < 2 && <span className="text-slate-300">→</span>}
+                  </div>
+                ))}
               </div>
             </div>
             <div className="p-6">
@@ -120,7 +139,7 @@ export function DeployStep({ pipeline, mutate, busy, goTo }: StepProps) {
                   const state = done || progress > i ? "done" : progress === i ? "active" : "todo";
                   return (
                     <li key={s} className="flex items-center gap-3">
-                      <span className={cn("flex size-6 items-center justify-center rounded-full text-[11px] font-semibold", state === "done" ? "bg-emerald-500 text-white" : state === "active" ? "bg-dbx-500 text-white" : "bg-slate-100 text-slate-400")}>
+                      <span className={cn("flex size-6 items-center justify-center rounded-full text-[11px] font-semibold", state === "done" ? "bg-emerald-500 text-white" : state === "active" ? "bg-brand-600 text-white" : "bg-slate-100 text-slate-400")}>
                         {state === "done" ? "✓" : state === "active" ? <LoaderCircle className="size-3.5 animate-spin" /> : i + 1}
                       </span>
                       <span className={cn("text-sm", state === "todo" ? "text-slate-400" : "text-slate-800", state === "active" && "font-medium")}>{s}</span>
@@ -129,7 +148,7 @@ export function DeployStep({ pipeline, mutate, busy, goTo }: StepProps) {
                 })}
               </ol>
             </div>
-          </Card>
+          </SectionCard>
           {done && tables.length > 0 && (
             <Card>
               <CardHeader title="Created in Databricks" description={dep.workspace_url ?? ""} icon={<ShieldCheck />} actions={canSeeTech && <Button variant="ghost" size="sm" onClick={() => setTech(true)}><Code /> Show technical details</Button>} />

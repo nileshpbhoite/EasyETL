@@ -353,6 +353,24 @@ def duplicate_step(pipeline_id: str, step_id: str, db: DB, user: Editor):
     return _done(db, user, row, meta, f"Duplicated step: {src.label}")
 
 
+class ClearIn(BaseModel):
+    dataset_id: str
+
+
+@router.post("/{pipeline_id}/transformations/clear")
+def clear_steps(pipeline_id: str, body: ClearIn, db: DB, user: Editor):
+    row, meta, rt = _ctx(db, user, pipeline_id)
+    removed = [s for s in meta.transformations if s.dataset_id == body.dataset_id]
+    meta.transformations = [s for s in meta.transformations if s.dataset_id != body.dataset_id]
+    ids = {s.recommendation_id for s in removed}
+    for r in meta.recommendations:
+        if r.id in ids:
+            r.status = "pending"
+    meta.log("steps_cleared", dataset=body.dataset_id, count=len(removed))
+    service.refresh_quality_after(rt)
+    return _done(db, user, row, meta, f"Cleared {len(removed)} transformation steps")
+
+
 class ReorderIn(BaseModel):
     order: list[str]
 

@@ -1,12 +1,13 @@
 "use client";
 
-import { Bell, ChevronDown, CircleHelp, Library, LogOut, Rocket, Search, Sparkles, Workflow } from "lucide-react";
+import { ArrowRight, Bell, ChevronDown, CircleHelp, Library, LogOut, Rocket, Search, Sparkles, Workflow } from "lucide-react";
+import { toast } from "sonner";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, clearSession, getStoredUser } from "@/lib/api";
 import { useUI } from "@/lib/store";
-import type { Alert, PipelineSummary } from "@/lib/types";
+import { STEPS, type Alert, type PipelineSummary, type Step } from "@/lib/types";
 import { cn, humanize, timeAgo } from "@/lib/utils";
 import { Button, Select } from "@/components/ui";
 
@@ -86,9 +87,9 @@ function GlobalSearch() {
           if (e.key === "Enter" && results[active]) go(results[active]);
           if (e.key === "Escape") inputRef.current?.blur();
         }}
-        placeholder="Search pipelines, tables, columns…"
+        placeholder="Search pipelines, sources, or ask AI…"
         aria-label="Global search"
-        className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-14 text-sm placeholder:text-slate-400 focus:border-brand-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-100"
+        className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-14 shadow-sm text-sm placeholder:text-slate-400 focus:border-brand-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-100"
       />
       <kbd className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded border border-slate-200 bg-white px-1.5 text-[10px] font-medium text-slate-400">⌘K</kbd>
       {open && results.length > 0 && (
@@ -160,12 +161,8 @@ function UserMenu() {
   return (
     <div className="relative">
       <button onClick={() => setOpen((v) => !v)} className="flex items-center gap-2 rounded-lg px-1.5 py-1 hover:bg-slate-100" aria-label="User menu">
-        <div className="flex size-8 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-ai-600 text-xs font-semibold text-white">{initials}</div>
-        <div className="hidden text-left leading-tight lg:block">
-          <div className="text-xs font-semibold text-slate-800">{user?.name}</div>
-          <div className="text-[10px] text-slate-500">{humanize(user?.role)}</div>
-        </div>
-        <ChevronDown className="hidden size-3.5 text-slate-400 lg:block" />
+        <div className="flex size-9 items-center justify-center rounded-full bg-navy-900 text-xs font-semibold text-white ring-2 ring-white">{initials}</div>
+        <ChevronDown className="hidden size-3.5 text-slate-400 2xl:block" />
       </button>
       {open && (
         <>
@@ -200,32 +197,48 @@ function UserMenu() {
 
 export function Topbar() {
   const path = usePathname();
+  const router = useRouter();
+  const search = useSearchParams();
   const { openAssistant, environment, setEnvironment } = useUI();
   const pipelineMatch = path.match(/^\/pipelines\/([a-z0-9]{8,})/);
+  const step = (search.get("step") ?? "source") as Step;
+  const idx = STEPS.findIndex((s) => s.id === step);
+  const next = STEPS[idx + 1];
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    if (!pipelineMatch) return;
+    setSaving(true);
+    try {
+      const p = await api.patch<{ version: number }>(`/api/pipelines/${pipelineMatch[1]}`, { current_step: step });
+      toast.success("All changes saved", { description: `Version ${p.version} · autosave is always on` });
+    } catch (e) {
+      toast.error("Couldn't save", { description: (e as Error).message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
-    <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-3 border-b border-slate-200/80 bg-white/85 px-4 backdrop-blur md:px-6">
+    <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center gap-3 border-b border-slate-200/70 bg-white/85 px-4 backdrop-blur md:px-6">
       <GlobalSearch />
-      <div className="ml-auto flex items-center gap-1.5">
+      <button
+        onClick={() => openAssistant(pipelineMatch ? {} : { pipelineId: undefined, page: path.split("/")[1] || "home" })}
+        className="hidden h-9 items-center gap-1.5 rounded-full border border-ai-300 bg-ai-50/60 px-3.5 text-[13px] font-medium text-ai-700 hover:bg-ai-100 sm:flex"
+      >
+        <Sparkles className="size-4" /> Ask AI / Help
+      </button>
+      <div className="ml-auto flex items-center gap-2">
         <Select
           value={environment}
           onChange={setEnvironment}
-          className="hidden w-44 lg:block"
+          className="hidden w-40 xl:block"
           options={[
             { value: "development", label: "● Development" },
             { value: "staging", label: "● Staging" },
             { value: "production", label: "● Production" },
           ]}
         />
-        <Button variant="aiSoft" size="sm" onClick={() => openAssistant(pipelineMatch ? {} : { pipelineId: undefined, page: path.split("/")[1] || "home" })}>
-          <Sparkles /> Ask AI
-        </Button>
-        {pipelineMatch && (
-          <Link href={`/pipelines/${pipelineMatch[1]}?step=review`}>
-            <Button variant="databricks" size="sm">
-              <Rocket /> Deploy to Databricks
-            </Button>
-          </Link>
-        )}
         <Notifications />
         <Link href="/help">
           <Button variant="ghost" size="icon" aria-label="Help">
@@ -233,6 +246,21 @@ export function Topbar() {
           </Button>
         </Link>
         <UserMenu />
+        {pipelineMatch && (
+          <>
+            <Button variant="secondary" size="md" onClick={save} loading={saving}>Save</Button>
+            {next && (
+              <Button variant="primary" size="md" onClick={() => router.push(`/pipelines/${pipelineMatch[1]}?step=${next.id}`)}>
+                Next <ArrowRight />
+              </Button>
+            )}
+          </>
+        )}
+        <Link href={pipelineMatch ? `/pipelines/${pipelineMatch[1]}?step=review` : "/pipelines/new"}>
+          <Button variant="primary" size="md" className="h-10 px-4">
+            <Rocket /> Deploy to Databricks
+          </Button>
+        </Link>
       </div>
     </header>
   );

@@ -34,6 +34,7 @@ def pipeline_out(row: Pipeline, meta: PipelineMetadata | None = None, full: bool
         "created_at": iso(row.created_at), "updated_at": iso(row.updated_at),
         "source_label": src.name or (src.connector or "").replace("_", " ").title() or "Not connected",
         "source_connector": src.connector, "source_category": src.category,
+        "source_format": next((d.format for d in meta.selected_datasets() if d.format), None),
         "dataset_count": len(meta.selected_datasets()),
         "target_label": f"{meta.lakehouse.catalog}.{meta.lakehouse.gold_schema}" if silver_or_gold else "Databricks",
         "current_step": meta.current_step, "completed_steps": meta.completed_steps, "mode": meta.mode,

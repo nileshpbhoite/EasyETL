@@ -260,4 +260,43 @@ def light_quality(df: pl.DataFrame, sample_rows: int = 20_000) -> dict[str, Any]
     cells = max(p["profiled_rows"] * max(len(flat), 1), 1)
     return {"rows": view.height, "columns": len(cols), "null_pct": round(null_cells / cells * 100, 2), "null_cells": null_cells,
             "duplicates": p["duplicate_rows"], "invalid_values": sum(c.get("invalid_count", 0) for c in flat),
-            "quality_score": p["quality"]["score"], "quality": p["quality"]}
+            "quality_score": p["quality"]["score"], "quality": p["quality"],
+            "invalid_by_type": _invalid_by_type(flat, view.head(sample_rows)), "format_columns": _format_stats(flat)}
+
+
+FORMAT_TYPES = ("phone", "date", "date_of_birth", "timestamp", "country", "email", "identifier", "currency", "percentage", "boolean", "category")
+
+
+def _invalid_by_type(cols: list[dict], view: pl.DataFrame) -> dict[str, dict[str, float]]:
+    """Invalid values per semantic type. Phones count as invalid when not in one international (E.164) format."""
+    out: dict[str, dict[str, float]] = {}
+    n = view.height
+    for c in cols:
+        st = c["semantic_type"]
+        if st not in ("email", "phone", "date", "date_of_birth", "country"):
+            continue
+        key = "date" if st == "date_of_birth" else st
+        o = out.setdefault(key, {"invalid": 0, "values": 0})
+        present = n - c["null_count"]
+        o["values"] += present
+        if st == "phone" and view.schema[c["name"]] == pl.Utf8:
+            s = view[c["name"]].drop_nulls().str.strip_chars()
+            s = s.filter(s != "")
+            o["invalid"] += int((~s.str.contains(r"^\+\d{8,15}$")).sum())
+        else:
+            o["invalid"] += c.get("invalid_count", 0) or 0
+    for o in out.values():
+        o["pct"] = round(o["invalid"] / o["values"] * 100, 2) if o["values"] else 0.0
+    return out
+
+
+def _format_stats(cols: list[dict]) -> dict[str, int]:
+    """Columns whose values follow one consistent format (typed columns count as consistent)."""
+    relevant = [c for c in cols if c["semantic_type"] in FORMAT_TYPES]
+    consistent = 0
+    for c in relevant:
+        typed = c["dtype"] not in ("String",)
+        variants = c.get("case_variant_values", 0) or 0
+        if typed or ((c.get("pattern_consistency") or 0) >= 95 and not variants) or (c["semantic_type"] in ("category", "identifier", "email") and not variants and not c.get("invalid_count")):
+            consistent += 1
+    return {"consistent": consistent, "total": len(relevant)}

@@ -1,26 +1,29 @@
+import { BRAND } from "@/lib/brand";
 import { cn } from "@/lib/utils";
 
 export function LogoMark({ className }: { className?: string }) {
   return (
-    <div className={cn("relative flex size-8 items-center justify-center rounded-xl gradient-primary shadow-glow", className)}>
-      <svg viewBox="0 0 24 24" className="size-5 text-white" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
-        <path d="M4 7h9" />
-        <path d="M4 12h13" />
-        <path d="M4 17h9" />
-        <path d="M17 5l3 2-3 2" />
-        <path d="M17 15l3 2-3 2" />
-      </svg>
-    </div>
+    <svg viewBox="0 0 32 32" className={cn("size-8", className)} fill="none" aria-hidden>
+      <defs>
+        <linearGradient id="lm" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#8fb2ff" />
+          <stop offset="1" stopColor="#2f6bff" />
+        </linearGradient>
+      </defs>
+      <path d="M16 2.5 28 9.25v13.5L16 29.5 4 22.75V9.25L16 2.5Z" stroke="url(#lm)" strokeWidth="2.4" strokeLinejoin="round" />
+      <path d="M16 9.5 22 13v6.5L16 23l-6-3.5V13l6-3.5Z" fill="url(#lm)" />
+      <path d="M10 13l6 3.5 6-3.5M16 16.5V23" stroke="#0b1235" strokeWidth="1.4" strokeLinejoin="round" />
+    </svg>
   );
 }
 
 export function Logo({ dark = true }: { dark?: boolean }) {
   return (
     <div className="flex items-center gap-2.5">
-      <LogoMark />
+      <LogoMark className="size-9" />
       <div className="leading-tight">
-        <div className={cn("text-[15px] font-semibold tracking-tight", dark ? "text-white" : "text-slate-900")}>EasyETL</div>
-        <div className={cn("text-[10px] font-medium uppercase tracking-[0.12em]", dark ? "text-brand-300" : "text-brand-600")}>for Databricks</div>
+        <div className={cn("text-[17px] font-semibold tracking-tight", dark ? "text-white" : "text-slate-900")}>{BRAND.name}</div>
+        <div className={cn("text-[10.5px]", dark ? "text-slate-400" : "text-slate-500")}>{BRAND.tagline}</div>
       </div>
     </div>
   );

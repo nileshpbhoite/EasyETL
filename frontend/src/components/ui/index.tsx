@@ -191,13 +191,13 @@ export function Field({ label, hint, help, required, children, className }: { la
   );
 }
 
-export function Switch({ checked, onCheckedChange, disabled, label, description }: { checked: boolean; onCheckedChange: (v: boolean) => void; disabled?: boolean; label?: React.ReactNode; description?: React.ReactNode }) {
+export function Switch({ checked, onCheckedChange, disabled, label, description, tone = "brand" }: { checked: boolean; onCheckedChange: (v: boolean) => void; disabled?: boolean; label?: React.ReactNode; description?: React.ReactNode; tone?: "brand" | "green" }) {
   const control = (
     <SwitchPrimitive.Root
       checked={checked}
       onCheckedChange={onCheckedChange}
       disabled={disabled}
-      className="relative h-5 w-9 shrink-0 cursor-pointer rounded-full bg-slate-200 transition-colors data-[state=checked]:bg-brand-600 disabled:opacity-50"
+      className={cn("relative h-5 w-9 shrink-0 cursor-pointer rounded-full bg-slate-200 transition-colors disabled:opacity-50", tone === "green" ? "data-[state=checked]:bg-emerald-500" : "data-[state=checked]:bg-brand-600")}
     >
       <SwitchPrimitive.Thumb className="block size-4 translate-x-0.5 rounded-full bg-white shadow transition-transform data-[state=checked]:translate-x-[18px]" />
     </SwitchPrimitive.Root>
