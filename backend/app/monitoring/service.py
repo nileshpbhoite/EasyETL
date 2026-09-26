@@ -43,7 +43,7 @@ def _baseline(meta: PipelineMetadata) -> dict[str, float]:
     quality = statistics.mean(after) if after else (statistics.mean([p["quality"]["score"] for p in profiles]) if profiles else 90.0)
     steps = sum(1 for t in meta.transformations if t.enabled)
     cost = estimate_cost(meta)
-    return {"records": per_run, "duration": 45 + per_run / 900 + steps * 2.5, "quality": quality,
+    return {"records": per_run, "duration": 14 + per_run / 1500 + steps * 1.2, "quality": quality,
             "cost": cost["compute_usd"] / max(cost["runs_per_month"], 1), "storage": max(cost["storage_gb"], 0.01)}
 
 
@@ -106,7 +106,8 @@ def ensure_runs(db: Session, row: Pipeline, meta: PipelineMetadata) -> None:
         n = len(times)
         anomalies: dict[int, str] = {}
         if n > 8:
-            anomalies[n - 1] = ["volume_drop", "quality", "volume_drop", "slow"][s % 4]
+            entities = set(meta.analysis.entities.values())
+            anomalies[n - 1] = "volume_drop" if "customer" in entities and meta.source.category == "file" else ["quality", "slow", "volume_drop"][s % 3]
             anomalies[max(1, n // 3)] = "failed"
             anomalies[max(2, (2 * n) // 3)] = "schema" if s % 2 == 0 else "volume_spike"
         runs = [_make_run(row.id, meta, ts, i, base, anomalies.get(i)) for i, ts in enumerate(times)]
@@ -155,8 +156,13 @@ def detect_anomalies(meta: PipelineMetadata, runs: list[PipelineRun], paused: bo
     if len(runs) < 5:
         return alerts
     latest = runs[-1]
-    history = [r for r in ok_runs[:-1]][-48:]
     interval = INTERVALS[meta.ingestion.frequency]
+    history = [r for r in ok_runs[:-1]][-48:]
+    if interval <= timedelta(hours=1):
+        # compare with the same hour of day — volumes follow a daily rhythm
+        same_hour = [r for r in ok_runs[:-1] if _utc(r.started_at).hour == _utc(latest.started_at).hour][-14:]
+        if len(same_hour) >= 5:
+            history = same_hour
     source = meta.selected_datasets()[0].name if meta.selected_datasets() else "Source"
     entity = next(iter(meta.analysis.entities.values()), "record").title()
 

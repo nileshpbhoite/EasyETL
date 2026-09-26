@@ -40,6 +40,29 @@ def estimate_cost(meta: PipelineMetadata) -> dict[str, Any]:
             "storage_gb": round(storage_gb, 3), "assumptions": "Estimated with list DBU prices and compressed Delta storage; actual costs depend on your contract."}
 
 
+def fq_tables(meta: PipelineMetadata) -> set[str]:
+    lh = meta.lakehouse
+    schema = {"bronze": lh.bronze_schema, "silver": lh.silver_schema, "gold": lh.gold_schema}
+    return {f"{lh.catalog}.{schema[t.layer]}.{t.name}" for t in lh.tables if t.enabled}
+
+
+def _table_conflicts(rt: PipelineRuntime) -> list[tuple[str, str]]:
+    """Two pipelines must never write the same Unity Catalog table."""
+    from sqlalchemy import select
+
+    from ..core.models import Pipeline
+
+    mine = fq_tables(rt.meta)
+    out = []
+    for row in rt.db.scalars(select(Pipeline).where(Pipeline.tenant_id == rt.tenant_id)).all():
+        if row.id == rt.pipeline_id:
+            continue
+        other = PipelineMetadata(**row.metadata_doc)
+        for fq in sorted(mine & fq_tables(other)):
+            out.append((fq, row.name))
+    return out
+
+
 def _check(id_: str, label: str, status: str, message: str, fix: str | None = None, details: list[str] | None = None) -> dict:
     return {"id": id_, "label": label, "status": status, "message": message, "fix": fix, "details": details or []}
 
@@ -107,12 +130,14 @@ def run_health_check(rt: PipelineRuntime) -> HealthCheckResult:
     names = [t.name for t in lh.tables if t.enabled]
     lh_problems += [f"'{n}' isn't a valid table name" for n in names if not IDENT_RE.match(n)]
     lh_problems += [f"Duplicate table name '{n}'" for n in {n for n in names if names.count(n) > 1}]
+    conflicts = _table_conflicts(rt)
+    lh_problems += [f"{fq} is already produced by pipeline “{other}”" for fq, other in conflicts]
     for ident in (lh.catalog, lh.bronze_schema, lh.silver_schema, lh.gold_schema):
         if not IDENT_RE.match(ident or ""):
             lh_problems.append(f"'{ident}' isn't a valid catalog/schema name")
     checks.append(_check("lakehouse", "Lakehouse Ready", "fail" if lh_problems else "pass",
                          "The Lakehouse design needs attention." if lh_problems else f"{len(names)} tables across Bronze, Silver and Gold.",
-                         fix="regenerate_lakehouse" if lh_problems else None, details=lh_problems))
+                         fix=("prefix_table_names" if conflicts else "regenerate_lakehouse") if lh_problems else None, details=lh_problems))
 
     # 7 Governance
     gov = meta.governance

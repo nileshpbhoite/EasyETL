@@ -38,7 +38,7 @@ def pipeline_out(row: Pipeline, meta: PipelineMetadata | None = None, full: bool
         "target_label": f"{meta.lakehouse.catalog}.{meta.lakehouse.gold_schema}" if silver_or_gold else "Databricks",
         "current_step": meta.current_step, "completed_steps": meta.completed_steps, "mode": meta.mode,
         "deployment_status": meta.deployment.status, "deployment_mode": meta.deployment.mode,
-        "quality_score": _quality(meta), "frequency": meta.ingestion.frequency,
+        "quality_score": _quality(meta), "frequency": meta.ingestion.frequency, "ingestion_engine": meta.ingestion.engine,
     }
     if full:
         base["metadata"] = meta.model_dump(mode="json")

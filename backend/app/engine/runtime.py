@@ -46,8 +46,8 @@ def clear_cache() -> None:
 
 
 class PipelineRuntime:
-    def __init__(self, db: Session, tenant_id: str, meta: PipelineMetadata):
-        self.db, self.tenant_id, self.meta = db, tenant_id, meta
+    def __init__(self, db: Session, tenant_id: str, meta: PipelineMetadata, pipeline_id: str | None = None):
+        self.db, self.tenant_id, self.meta, self.pipeline_id = db, tenant_id, meta, pipeline_id
         self.settings = get_settings()
         self._transformed: dict[str, pl.DataFrame] = {}
 

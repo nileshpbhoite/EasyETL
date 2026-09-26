@@ -476,7 +476,7 @@ def design_lakehouse(meta: PipelineMetadata) -> dict:
         bronze = TableDesign(layer="bronze", name=f"{prefix}{_slug(ds.name)}_raw", description=f"Raw copy of {ds.name}, exactly as received, with load metadata.",
                              source_datasets=[ds.id], business_entity=entity, columns=[{"name": c["name"], "type": "string"} for c in prof.get("columns", [])])
         tables.append(bronze)
-        base_name = ENTITY_TABLE.get(entity, _slug(ds.name))
+        base_name = f"{prefix}{ENTITY_TABLE.get(entity, _slug(ds.name))}"
         name = base_name if base_name not in {t.name for t in tables if t.layer == "silver"} else f"{base_name}_{_slug(ds.name)}"
         pk = _pk(prof) if prof else None
         recency = _recency_column(prof) if prof else None
@@ -496,24 +496,25 @@ def design_lakehouse(meta: PipelineMetadata) -> dict:
     # Gold business models
     cust, orders = silver_by_entity.get("customer"), silver_by_entity.get("order")
     veh, svc = silver_by_entity.get("vehicle"), silver_by_entity.get("service")
+    gp = "" if meta.source.category == "file" else f"{src_slug}_"
     if cust and (orders or veh or svc):
         sources = [t for t in (cust, orders, veh, svc) if t]
-        tables.append(TableDesign(layer="gold", name="customer_360", business_entity="customer",
+        tables.append(TableDesign(layer="gold", name=f"{gp}customer_360", business_entity="customer",
                                   description="One row per customer with lifetime value, order history, vehicles owned and service activity.",
                                   source_tables=[t.name for t in sources], primary_key=cust.primary_key, cluster_by=cust.primary_key,
                                   gold_logic={"type": "entity_360", "base": cust.name, "key": cust.primary_key[:1],
                                               "related": [{"table": t.name, "entity": t.business_entity} for t in sources[1:]]}))
         rationale.append("customer_360 combines customers with their orders, vehicles and services into a single analytics-ready model.")
     if orders:
-        tables.append(TableDesign(layer="gold", name="sales_daily_summary", business_entity="order",
+        tables.append(TableDesign(layer="gold", name=f"{gp}sales_daily_summary", business_entity="order",
                                   description="Daily revenue, order count and average order value by product category and channel.",
                                   source_tables=[orders.name], gold_logic={"type": "time_summary", "base": orders.name, "grain": "day"}))
     if svc:
-        tables.append(TableDesign(layer="gold", name="service_kpis", business_entity="service",
+        tables.append(TableDesign(layer="gold", name=f"{gp}service_kpis", business_entity="service",
                                   description="Monthly service volume, cost and most common service types.",
                                   source_tables=[svc.name], gold_logic={"type": "time_summary", "base": svc.name, "grain": "month"}))
     if veh and not cust:
-        tables.append(TableDesign(layer="gold", name="fleet_overview", business_entity="vehicle", description="Vehicle counts by make, model, year and powertrain.",
+        tables.append(TableDesign(layer="gold", name=f"{gp}fleet_overview", business_entity="vehicle", description="Vehicle counts by make, model, year and powertrain.",
                                   source_tables=[veh.name], gold_logic={"type": "dimension_summary", "base": veh.name}))
     if not any(t.layer == "gold" for t in tables):
         for s in [t for t in tables if t.layer == "silver"][:2]:

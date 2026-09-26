@@ -365,6 +365,20 @@ def auto_fix(rt: PipelineRuntime, fix: str) -> str:
             fixed = heuristics.to_snake(v or attr.split("_")[0])
             setattr(meta.lakehouse, attr, fixed)
         return "Lakehouse design regenerated."
+    if fix == "prefix_table_names":
+        prefix = heuristics.to_snake(meta.name)[:30]
+        renames = {t.name: f"{prefix}_{t.name}" for t in meta.lakehouse.tables if not t.name.startswith(prefix + "_")}
+        for t in meta.lakehouse.tables:
+            t.name = renames.get(t.name, t.name)
+            t.source_tables = [renames.get(x, x) for x in t.source_tables]
+            if t.gold_logic.get("base"):
+                t.gold_logic["base"] = renames.get(t.gold_logic["base"], t.gold_logic["base"])
+            for rel in t.gold_logic.get("related", []):
+                rel["table"] = renames.get(rel["table"], rel["table"])
+        for r in meta.lakehouse.relationships:
+            r["from_table"] = renames.get(r["from_table"], r["from_table"])
+            r["to_table"] = renames.get(r["to_table"], r["to_table"])
+        return f"Prefixed {len(renames)} table names with '{prefix}_' to keep them unique."
     if fix == "enable_unity_catalog":
         meta.governance.unity_catalog = True
         return "Unity Catalog enabled."

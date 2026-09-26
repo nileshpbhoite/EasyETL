@@ -101,7 +101,7 @@ def _build(db: Session, user: CurrentUser, name: str, connector: str, config: di
     row, meta = service.load(db, user, row.id)
     spec = get_connector_class(connector).spec
     meta.source.category, meta.source.connector, meta.source.name, meta.source.config = spec.category, connector, spec.name, config
-    rt = PipelineRuntime(db, user.tenant_id, meta)
+    rt = PipelineRuntime(db, user.tenant_id, meta, row.id)
     conn = rt.connector()
     test = conn.test_connection()
     meta.source.connection_info = {"ok": test.ok, "title": test.title, "message": test.message, "info": test.info}

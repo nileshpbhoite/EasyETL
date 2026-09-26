@@ -29,7 +29,7 @@ router = APIRouter(prefix="/api/pipelines", tags=["pipelines"])
 
 def _ctx(db, user, pipeline_id):
     row, meta = service.load(db, user, pipeline_id)
-    return row, meta, PipelineRuntime(db, user.tenant_id, meta)
+    return row, meta, PipelineRuntime(db, user.tenant_id, meta, row.id)
 
 
 def _done(db, user, row, meta, summary: str, **extra) -> dict:
@@ -183,7 +183,7 @@ def set_source(pipeline_id: str, body: SourceIn, db: DB, user: Editor):
     meta.source.name = body.name or spec.name
     meta.source.config = {**config, **({"_template_transform_patterns": meta.source.config["_template_transform_patterns"]} if meta.source.config.get("_template_transform_patterns") else {})}
     meta.source.connection_id = connection_id
-    rt = PipelineRuntime(db, user.tenant_id, meta)
+    rt = PipelineRuntime(db, user.tenant_id, meta, row.id)
     connector = rt.connector()
     test = connector.test_connection()
     meta.source.connection_info = {"ok": test.ok, "title": test.title, "message": test.message, "info": test.info, "technical": test.technical, "tested_at": now_iso()}
@@ -368,14 +368,21 @@ class PreviewIn(BaseModel):
     dataset_id: str
     step_id: str | None = None
     draft: dict[str, Any] | None = None
+    replace_step_id: str | None = None
     rows: int = 60
 
 
 @router.post("/{pipeline_id}/preview")
 def preview(pipeline_id: str, body: PreviewIn, db: DB, user: User):
+    """Before/After preview. Modes: a saved step (step_id), a new draft appended at the end (draft), an edited
+    version of an existing step (draft + replace_step_id), or the whole pipeline (neither)."""
     _, meta, rt = _ctx(db, user, pipeline_id)
     draft = TransformStep(type=body.draft["type"], dataset_id=body.dataset_id, params=body.draft.get("params") or {}) if body.draft else None
-    return preview_step(rt.raw(body.dataset_id), rt.steps_for(body.dataset_id), body.step_id, rt.context(), row_limit=min(body.rows, 200), draft=draft)
+    steps = rt.steps_for(body.dataset_id)
+    if draft and body.replace_step_id:
+        idx = next((i for i, s in enumerate(steps) if s.id == body.replace_step_id), len(steps))
+        steps = steps[:idx]
+    return preview_step(rt.raw(body.dataset_id), steps, None if draft else body.step_id, rt.context(), row_limit=min(body.rows, 200), draft=draft)
 
 
 # ------------------------------------------------------------------ data quality
@@ -513,6 +520,8 @@ def fix(pipeline_id: str, body: FixIn, db: DB, user: Editor):
     message = service.auto_fix(rt, body.fix)
     rt._transformed.clear()
     result = service.health_check(rt)
+    if result["ready"]:
+        meta.mark_complete("review")
     return _done(db, user, row, meta, f"Auto-fix: {message}", message=message, health=result)
 
 
