@@ -220,9 +220,96 @@ export interface QualityRule {
   rule: string;
   params: Record<string, any>;
   description: string;
-  on_fail: "warn" | "drop" | "quarantine" | "fail";
+  on_fail: "warn" | "flag" | "drop" | "quarantine" | "fail";
   enabled: boolean;
-  origin: "user" | "ai" | "template";
+  origin: "user" | "ai" | "template" | "nl" | "excel" | "recommendation";
+  name?: string | null;
+  severity: "critical" | "high" | "medium" | "low";
+  threshold_green: number;
+  threshold_amber: number;
+  source_text?: string | null;
+}
+
+export type DqAction = "flag" | "quarantine" | "drop" | "fail";
+export type Rag = "green" | "amber" | "red";
+
+export interface QualityConfig {
+  default_action: "flag" | "quarantine";
+  dq_schema: string;
+  add_dq_columns: boolean;
+  fail_run_below?: number | null;
+}
+
+export interface RuleResult {
+  rule_id: string;
+  name: string;
+  dimension: string;
+  description: string;
+  column?: string | null;
+  severity: QualityRule["severity"];
+  action: DqAction;
+  origin: QualityRule["origin"];
+  sql?: string | null;
+  threshold_green: number;
+  threshold_amber: number;
+  status: "passed" | "failed" | "error";
+  failed?: number;
+  pass_rate?: number;
+  rag?: Rag | null;
+  examples?: string[];
+  message?: string;
+}
+
+export interface DqEvaluation {
+  rules: RuleResult[];
+  dimensions: Record<string, number>;
+  score: number | null;
+  failing_records: number;
+  records: number;
+  handling: { quarantined: number; dropped: number; flagged: number; loaded: number; fail_rules_triggered: number };
+  rag: Record<Rag, number>;
+  issues: number;
+}
+
+export interface RunDq {
+  issues: number;
+  quarantined: number;
+  dropped: number;
+  flagged: number;
+  loaded: number;
+  score: number;
+  rag: Record<Rag, number>;
+  rules: { rule_id: string; name: string; dataset: string; action: DqAction; severity: string; failed: number; pass_rate: number; rag: Rag }[];
+}
+
+export interface TargetConfig {
+  id: string;
+  connection_id: string;
+  connector: string;
+  name: string;
+  tables: string[];
+  mode: "append" | "overwrite" | "merge";
+  merge_keys: string[];
+  destination: string;
+  file_format: "delta" | "parquet" | "csv" | "json";
+  include_flagged: boolean;
+  enabled: boolean;
+}
+
+export interface SavedConnection {
+  id: string;
+  name: string;
+  connector: string;
+  connector_name: string;
+  category: string;
+  usage: "source" | "target" | "both";
+  roles: ("source" | "target")[];
+  target_modes: TargetConfig["mode"][];
+  status: string;
+  info: Record<string, unknown>;
+  config: Record<string, any>;
+  has_secrets: boolean;
+  created_at: string;
 }
 
 export interface HealthCheck {
@@ -267,6 +354,8 @@ export interface PipelineMetadata {
   lakehouse: LakehouseDesign;
   governance: GovernanceConfig;
   quality_rules: QualityRule[];
+  quality: QualityConfig;
+  targets: TargetConfig[];
   health_check: HealthCheck;
   deployment: DeploymentState;
   history: { at: string; event: string; [k: string]: unknown }[];
@@ -314,7 +403,7 @@ export interface Run {
   cost_usd: number;
   storage_gb: number;
   schema_hash: string;
-  details: { layers?: Record<string, number>; error?: { title: string; message: string; technical?: string }; schema_change?: { added: string[] } };
+  details: { layers?: Record<string, number>; error?: { title: string; message: string; technical?: string }; schema_change?: { added: string[] }; dq?: RunDq };
 }
 
 export interface Alert {
@@ -342,6 +431,7 @@ export interface FieldSpec {
   options: { value: string; label: string }[];
   help?: string | null;
   advanced: boolean;
+  show_if?: Record<string, string[]> | null;
 }
 
 export interface ConnectorSpec {
@@ -359,6 +449,9 @@ export interface ConnectorSpec {
   availability: "ga" | "preview" | "sandbox";
   object_label: string;
   demo_hint?: string | null;
+  roles: ("source" | "target")[];
+  target_modes: TargetConfig["mode"][];
+  target_note?: string | null;
 }
 
 export interface ParamSpec {

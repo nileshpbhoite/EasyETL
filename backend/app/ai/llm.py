@@ -154,3 +154,43 @@ def answer(question: str, context: dict) -> LLMAnswer | None:
     if response.stop_reason == "refusal":
         return None
     return response.parsed_output
+
+
+class LLMDqRule(BaseModel):
+    sql: str = Field(description="ONE Databricks SQL boolean predicate that is TRUE when a record passes the rule")
+    dimension: Literal["completeness", "uniqueness", "validity", "accuracy", "consistency", "referential_integrity", "range", "pattern", "custom"]
+    explanation: str = Field(description="One sentence, plain English, how the condition implements the rule")
+
+
+DQ_SYSTEM_PROMPT = """You convert a business user's data quality rule into ONE Databricks SQL boolean predicate.
+- Output a condition over the row's columns only (no SELECT, subqueries, statements, comments or semicolons).
+- Use only the listed columns, spelled exactly as given (backticks for names with spaces).
+- Allowed functions: length, upper, lower, trim, ltrim, rtrim, abs, round, coalesce, nvl, current_date, current_timestamp, to_date,
+  year, month, day, datediff, regexp_replace, substring, concat, startswith, endswith, contains, isnull, isnotnull, cast, try_cast; operators
+  AND OR NOT, comparisons, IN, BETWEEN, LIKE, RLIKE, IS [NOT] NULL, CASE WHEN.
+- The predicate is TRUE for a valid record. A NULL result is treated as passing, so add `col IS NOT NULL` when emptiness must fail.
+- Use to_date() on text date columns before comparing dates."""
+
+
+def dq_rule_from_text(text: str, columns: list[str], types: dict[str, str], samples: dict[str, list]) -> dict | None:
+    """Plain-English rule → SQL predicate with Claude. The caller validates the SQL (dq_sql.validate) before use."""
+    import anthropic
+
+    s = get_settings()
+    cols = [{"name": c, "semantic_type": types.get(c), "sample_values": [str(v) for v in (samples.get(c) or [])[:4]]} for c in columns]
+    try:
+        response = _client().messages.parse(
+            model=s.anthropic_model,
+            max_tokens=4000,
+            output_config={"effort": "low"},
+            system=DQ_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": f"Columns:\n{json.dumps(cols, default=str)}\n\nRule: {text}"}],
+            output_format=LLMDqRule,
+        )
+    except (anthropic.APIConnectionError, anthropic.APIStatusError) as e:
+        log.warning("LLM DQ rule conversion unavailable: %s", e)
+        return None
+    if response.stop_reason == "refusal" or response.parsed_output is None:
+        return None
+    out: LLMDqRule = response.parsed_output
+    return {"rule": "expression", "params": {"sql": out.sql}, "dimension": out.dimension, "engine": "claude", "explanation": out.explanation}

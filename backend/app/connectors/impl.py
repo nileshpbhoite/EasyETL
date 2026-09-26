@@ -75,13 +75,24 @@ _DB_DIALECTS = {
     "mysql": ("mysql+pymysql", 3306, "MySQL"),
     "oracle": ("oracle+oracledb", 1521, "Oracle"),
     "jdbc": ("", 0, "JDBC"),
+    "azure_sql": ("mssql+pyodbc", 1433, "Azure SQL Database"),
+    "mariadb": ("mariadb+mariadbconnector", 3306, "MariaDB"),
+    "db2": ("db2+ibm_db", 50000, "IBM Db2"),
+    "teradata": ("teradatasql", 1025, "Teradata"),
+    "sap_hana": ("hana", 39015, "SAP HANA"),
+    "sybase": ("sybase+pyodbc", 5000, "SAP ASE (Sybase)"),
+    "cockroachdb": ("cockroachdb", 26257, "CockroachDB"),
+    "redshift": ("redshift+psycopg2", 5439, "Amazon Redshift"),
+    "synapse": ("mssql+pyodbc", 1433, "Azure Synapse Analytics"),
 }
 
 
-def _db_spec(cid: str, name: str, color: str, cdc: bool, desc: str) -> ConnectorSpec:
+def _db_spec(cid: str, name: str, color: str, cdc: bool, desc: str, category: str = "database") -> ConnectorSpec:
     port = _DB_DIALECTS[cid][1]
     return ConnectorSpec(
-        id=cid, name=name, category="database", icon="database", color=color, description=desc,
+        id=cid, name=name, category=category, icon="warehouse" if category == "warehouse" else "database", color=color, description=desc,  # type: ignore[arg-type]
+        roles=["source", "target"], target_modes=["append", "overwrite", "merge"],
+        target_note="Writes curated tables over JDBC from Databricks (MERGE through a staging table for upserts).",
         auth_methods=[
             AuthMethod(id="password", label="Username & password", fields=[
                 FieldSpec(name="username", label="Username", required=True),
@@ -119,7 +130,7 @@ class DatabaseConnector(Connector):
         from urllib.parse import quote_plus
 
         creds = f"{quote_plus(user)}:{quote_plus(pwd)}@" if user else ""
-        extra = "?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes" if self.dialect == "sqlserver" else ""
+        extra = "?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes" if driver == "mssql+pyodbc" else ""
         return f"{driver}://{creds}{host}:{port}/{self.config.get('database', '')}{extra}"
 
     def _engine(self):
@@ -205,8 +216,9 @@ class DatabaseConnector(Connector):
         return {"engine": _DB_DIALECTS[self.dialect][2], "demo": self.is_demo()}
 
 
-def _make_db_connector(cid: str, name: str, color: str, cdc: bool, desc: str):
-    return type(f"{name.replace(' ', '')}Connector", (DatabaseConnector,), {"dialect": cid, "spec": _db_spec(cid, name, color, cdc, desc)})
+def _make_db_connector(cid: str, name: str, color: str, cdc: bool, desc: str, category: str = "database"):
+    return type(f"{name.replace(' ', '').replace('(', '').replace(')', '')}Connector", (DatabaseConnector,),
+                {"dialect": cid, "spec": _db_spec(cid, name, color, cdc, desc, category)})
 
 
 SqlServerConnector = _make_db_connector("sqlserver", "SQL Server", "#cc2927", True, "Microsoft SQL Server and Azure SQL. Supports CDC.")
@@ -215,6 +227,15 @@ MySqlConnector = _make_db_connector("mysql", "MySQL", "#00758f", True, "MySQL an
 OracleConnector = _make_db_connector("oracle", "Oracle", "#f80000", True, "Oracle Database. Supports CDC via LogMiner.")
 JdbcConnector = _make_db_connector("jdbc", "Other JDBC database", "#64748b", False, "Any JDBC-compatible database via a connection URL.")
 JdbcConnector.spec.config_fields.insert(0, FieldSpec(name="connection_url", label="Connection URL", placeholder="dialect+driver://host:port/db"))
+AzureSqlConnector = _make_db_connector("azure_sql", "Azure SQL Database", "#0078d4", True, "Azure SQL Database and Managed Instance. Supports CDC.")
+MariaDbConnector = _make_db_connector("mariadb", "MariaDB", "#003545", True, "MariaDB Server and SkySQL (binlog CDC).")
+Db2Connector = _make_db_connector("db2", "IBM Db2", "#054ada", True, "Db2 for LUW and Db2 for z/OS.")
+TeradataConnector = _make_db_connector("teradata", "Teradata", "#f37440", False, "Teradata Vantage tables and views.")
+SapHanaConnector = _make_db_connector("sap_hana", "SAP HANA", "#0070f2", True, "SAP HANA and HANA Cloud tables and calculation views.")
+SybaseConnector = _make_db_connector("sybase", "SAP ASE (Sybase)", "#1e6bb8", False, "SAP Adaptive Server Enterprise.")
+CockroachConnector = _make_db_connector("cockroachdb", "CockroachDB", "#6933ff", True, "CockroachDB (changefeed CDC).")
+RedshiftConnector = _make_db_connector("redshift", "Amazon Redshift", "#8c4fff", False, "Redshift provisioned clusters and Serverless.", "warehouse")
+SynapseConnector = _make_db_connector("synapse", "Azure Synapse Analytics", "#0078d4", False, "Synapse dedicated and serverless SQL pools.", "warehouse")
 
 
 # ============================================================================ REST / GraphQL
@@ -250,6 +271,8 @@ class RestApiConnector(Connector):
     spec = ConnectorSpec(
         id="rest_api", name="REST API", category="api", icon="globe", color="#0ea5e9",
         description="Any JSON/XML/CSV REST endpoint — no code. Pagination, auth and incremental loads built in.",
+        roles=["source", "target"], target_modes=["append"],
+        target_note="Sends curated records to the endpoint (POST, batched JSON) — e.g. a webhook or an internal API.",
         auth_methods=[
             AuthMethod(id="none", label="No authentication"),
             AuthMethod(id="api_key", label="API key", fields=[
@@ -485,39 +508,60 @@ class SaaSConnector(Connector):
 
     app = "salesforce"
 
+    # Subclasses declared as data (see connectors/catalog.py) override these.
+    objects: list[tuple[str, list[str], int]] | None = None
+    instance: str | None = None
+    api_version: str | None = None
+    object_kind = "object"
+    sandbox_keys: tuple[str, ...] = ("environment",)
+
+    def _objects(self) -> list[tuple[str, list[str], int]]:
+        return self.objects or _SAAS_OBJECTS[self.app]
+
     def _sandbox(self) -> bool:
-        return self.config.get("environment", "sandbox") == "sandbox" or not self.secrets
+        if self.config.get("environment") == "sandbox":
+            return True
+        if any(str(self.config.get(k) or "").strip().lower() in ("demo", "sandbox") for k in self.sandbox_keys if k != "environment"):
+            return True
+        return not self.secrets
 
     def test_connection(self) -> TestResult:
-        name = _SAAS_META[self.app][0]
+        name = self.spec.name
         if not self._sandbox():
             if self.app == "salesforce" and self.config.get("auth_method") == "password" and not self.secrets.get("password"):
                 return TestResult(ok=False, title="Connection failed", message="Please provide the password and security token.")
+            # Live validation of application credentials runs on Databricks (Lakeflow Connect / Spark connector) at deploy time;
+            # this server doesn't call third-party APIs directly, so say exactly that instead of claiming a live connection.
+            return TestResult(ok=True, title="Credentials saved", message=(
+                f"{name} credentials are stored encrypted. They're validated on Databricks when the pipeline is deployed. "
+                "Until then EasyETL shows the standard object catalog with sample rows so you can design the pipeline."), info={
+                "Organization": self.config.get("organization") or self.config.get("host") or "—", "Validation": "At deploy time",
+                "Objects shown": f"{len(self._objects())} (standard catalog)", "Environment": "Production"})
         info = {
             "Organization": self.config.get("organization") or "Northwind Motors",
-            "Instance": {"salesforce": "na213.my.salesforce.com", "sap": "S/4HANA 2023 · client 100", "servicenow": "northwind.service-now.com",
-                         "workday": "wd5-impl-services1.workday.com", "snowflake": "nw12345.eu-west-1", "hubspot": "Portal 44821"}[self.app],
-            "API version": {"salesforce": "v61.0", "sap": "OData V4", "servicenow": "Table API", "workday": "RaaS v42.2", "snowflake": "SQL API",
-                            "hubspot": "CRM v3"}[self.app],
-            "Available objects": len(_SAAS_OBJECTS[self.app]),
-            "Environment": "Sandbox" if self._sandbox() else "Production",
+            "Instance": self.instance or {"salesforce": "na213.my.salesforce.com", "sap": "S/4HANA 2023 · client 100", "servicenow": "northwind.service-now.com",
+                                          "workday": "wd5-impl-services1.workday.com", "snowflake": "nw12345.eu-west-1", "hubspot": "Portal 44821"}.get(self.app, "sandbox"),
+            "API version": self.api_version or {"salesforce": "v61.0", "sap": "OData V4", "servicenow": "Table API", "workday": "RaaS v42.2", "snowflake": "SQL API",
+                                                "hubspot": "CRM v3"}.get(self.app, "—"),
+            f"Available {self.spec.object_label}": len(self._objects()),
+            "Environment": "Sandbox (sample data)",
         }
-        return TestResult(ok=True, title="Connection successful", message=f"Connected to {name}.", info=info)
+        return TestResult(ok=True, title="Connection successful", message=f"Connected to the {name} sandbox.", info=info)
 
     def discover(self) -> list[DatasetRef]:
         out = []
-        for i, (obj, cols, rows) in enumerate(_SAAS_OBJECTS[self.app]):
-            ds = DatasetRef(name=obj, kind="object", format="api", locator={"object": obj}, row_count=rows, column_count=len(cols),
+        for i, (obj, cols, rows) in enumerate(self._objects()):
+            ds = DatasetRef(name=obj, kind=self.object_kind, format="api", locator={"object": obj}, row_count=rows, column_count=len(cols),
                             columns=[{"name": c} for c in cols], selected=i < 3,
                             modified_at=(datetime.now(timezone.utc) - timedelta(hours=i * 7)).isoformat())
             ds.incremental_field = self.detect_incremental(ds)
-            ds.cdc_capable = _SAAS_META[self.app][5]
+            ds.cdc_capable = self.spec.supports_cdc
             out.append(ds)
         return out
 
     def read(self, dataset: DatasetRef, limit: int | None = None) -> pl.DataFrame:
         obj = dataset.locator["object"]
-        cols, rows = next((c, r) for o, c, r in _SAAS_OBJECTS[self.app] if o == obj)
+        cols, rows = next((c, r) for o, c, r in self._objects() if o == obj)
         n = min(rows, limit or rows)
         rng = random.Random(zlib.crc32(obj.encode()))
         data = {c: [_saas_value(c, i, rng) for i in range(n)] for c in cols}
@@ -532,8 +576,13 @@ def _make_saas(app: str):
                 FieldSpec(name="password", label="Password", type="password", secret=True, required=True),
                 *([FieldSpec(name="security_token", label="Security token", type="password", secret=True)] if app == "salesforce" else [])]),
             AuthMethod(id="token", label="API token", fields=[FieldSpec(name="api_token", label="API token", type="password", secret=True, required=True)])]
+    reverse_etl = app == "salesforce"
     spec = ConnectorSpec(
-        id=app, name=name, category="application", icon=icon, color=color, description=desc, auth_methods=auth,
+        id=app, name=name, category="warehouse" if app == "snowflake" else "application", icon=icon, color=color, description=desc, auth_methods=auth,
+        roles=["source", "target"] if reverse_etl or app == "snowflake" else ["source"],
+        target_modes=["append", "overwrite", "merge"] if app == "snowflake" else (["append", "merge"] if reverse_etl else []),
+        target_note="Writes tables with the Snowflake Spark connector." if app == "snowflake" else (
+            f"Reverse ETL: upserts curated records into {name} objects with the Bulk API 2.0 (external ID field)." if reverse_etl else None),
         config_fields=[FieldSpec(name="environment", label="Environment", type="select", default="production",
                                  options=[{"value": "production", "label": "Production"}, {"value": "sandbox", "label": "Sandbox"}]),
                        FieldSpec(name="organization", label="Organization / instance", placeholder="mycompany")],
@@ -599,8 +648,10 @@ class CloudStorageConnector(Connector):
 
 
 def _make_cloud(provider: str, name: str, color: str, fields: list[FieldSpec], desc: str, auth: list[AuthMethod]):
-    spec = ConnectorSpec(id=provider, name=name, category="cloud_storage" if provider != "sftp" else "application", icon="hard-drive" if provider != "sftp" else "server",
+    spec = ConnectorSpec(id=provider, name=name, category="cloud_storage", icon="hard-drive" if provider != "sftp" else "server",
                          color=color, description=desc, config_fields=fields, auth_methods=auth,
+                         roles=["source", "target"], target_modes=["append", "overwrite"],
+                         target_note="Exports Parquet, Delta, CSV or JSON files to this location.",
                          recommended_ingestion="auto_loader", object_label="files", demo_hint="easyetl-demo")
     return type(f"{name.replace(' ', '')}Connector", (CloudStorageConnector,), {"provider": provider, "spec": spec})
 
@@ -629,3 +680,18 @@ SftpConnector = _make_cloud("sftp", "SFTP", "#475569", [
     "Files on an SFTP server.", [AuthMethod(id="password", label="Username & password", fields=[
         FieldSpec(name="username", label="Username", required=True), FieldSpec(name="password", label="Password", type="password", secret=True, required=True)]),
         AuthMethod(id="key", label="SSH key", fields=[FieldSpec(name="private_key", label="Private key", type="password", secret=True, required=True)])])
+SftpConnector.spec.roles, SftpConnector.spec.target_modes, SftpConnector.spec.target_note = ["source"], [], None
+
+# Snowflake needs warehouse coordinates (not just an org name) to read and to be a write target.
+SnowflakeConnector.spec.config_fields = [
+    FieldSpec(name="account", label="Account identifier", required=True, placeholder="myorg-myaccount", help="Tip: enter 'demo' for sample tables."),
+    FieldSpec(name="warehouse", label="Warehouse", placeholder="COMPUTE_WH"), FieldSpec(name="database", label="Database", placeholder="ANALYTICS"),
+    FieldSpec(name="schema", label="Schema", default="PUBLIC"), FieldSpec(name="role", label="Role", advanced=True)]
+SnowflakeConnector.spec.auth_methods = [
+    AuthMethod(id="password", label="Username & password", fields=[FieldSpec(name="username", label="Username", required=True),
+                                                                   FieldSpec(name="password", label="Password", type="password", secret=True, required=True)]),
+    AuthMethod(id="key_pair", label="Key pair (recommended)", fields=[FieldSpec(name="username", label="Username", required=True),
+                                                                      FieldSpec(name="private_key", label="Private key (PEM)", type="password", secret=True, required=True)]),
+    AuthMethod(id="oauth", label="OAuth")]
+SnowflakeConnector.sandbox_keys = ("environment", "account")
+SalesforceConnector.spec.auth_methods[2].label = "OAuth access token"

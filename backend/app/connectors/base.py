@@ -28,6 +28,8 @@ class FieldSpec(BaseModel):
     options: list[dict[str, str]] = Field(default_factory=list)
     help: str | None = None
     advanced: bool = False
+    # Show this field only when other fields have one of the given values, e.g. {"connection_type": ["sql_warehouse"]}
+    show_if: dict[str, list[str]] | None = None
 
 
 class AuthMethod(BaseModel):
@@ -39,7 +41,7 @@ class AuthMethod(BaseModel):
 class ConnectorSpec(BaseModel):
     id: str
     name: str
-    category: Literal["file", "application", "database", "cloud_storage", "api"]
+    category: Literal["file", "application", "database", "warehouse", "cloud_storage", "streaming", "nosql", "api"]
     description: str
     icon: str = "database"
     color: str = "#4f46e5"
@@ -51,6 +53,10 @@ class ConnectorSpec(BaseModel):
     availability: Literal["ga", "preview", "sandbox"] = "ga"
     object_label: str = "tables"
     demo_hint: str | None = None
+    # What a saved connection can be used for. Targets receive curated Silver/Gold data after a pipeline run.
+    roles: list[Literal["source", "target"]] = Field(default_factory=lambda: ["source"])
+    target_modes: list[Literal["append", "overwrite", "merge"]] = Field(default_factory=list)
+    target_note: str | None = None
 
 
 class TestResult(BaseModel):

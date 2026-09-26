@@ -51,11 +51,35 @@ def _save_artifacts(pipeline_id: str, files: dict[str, str]) -> str:
     return prefix
 
 
+def dq_resources(meta: PipelineMetadata) -> list[dict[str, Any]]:
+    """Quarantine / results / score tables created for each Silver table that has rules."""
+    lh, schema = meta.lakehouse, meta.quality.dq_schema
+    out: list[dict[str, Any]] = []
+    for t in lh.tables:
+        if t.layer != "silver" or not t.enabled:
+            continue
+        rules = [r for r in meta.quality_rules if r.enabled and r.dataset_id in t.source_datasets]
+        if not rules:
+            continue
+        if any(r.action() == "quarantine" for r in rules):
+            out.append({"type": "table", "layer": "dq", "name": f"{lh.catalog}.{schema}.{t.name}_quarantine"})
+        out += [{"type": "table", "layer": "dq", "name": f"{lh.catalog}.{schema}.{t.name}_dq_results"},
+                {"type": "table", "layer": "dq", "name": f"{lh.catalog}.{schema}.{t.name}_dq_score"}]
+    return out
+
+
+def target_resources(meta: PipelineMetadata) -> list[dict[str, Any]]:
+    return [{"type": "target", "name": f"{t.name or t.connector} → {t.destination or 'default'} ({t.mode})", "id": t.id}
+            for t in meta.targets if t.enabled]
+
+
 class SimulatedDeployer:
     mode = "mock"
+    secret_values: dict[str, str] = {}
+    connections: dict[str, dict] = {}
 
     def deploy(self, pipeline_id: str, meta: PipelineMetadata, target: str) -> DeploymentState:
-        files = build_bundle(meta, target)
+        files = build_bundle(meta, target, self.connections)
         prefix = _save_artifacts(pipeline_id, files)
         h = hashlib.sha1(pipeline_id.encode()).hexdigest()
         name = slug(meta)
@@ -67,6 +91,9 @@ class SimulatedDeployer:
             {"type": "job", "name": f"[EasyETL] {meta.name} — orchestration", "id": str(int(h[:10], 16) % 10**15)},
             *[{"type": "table", "layer": t.layer, "name": f"{lh.catalog}.{ {'bronze': lh.bronze_schema, 'silver': lh.silver_schema, 'gold': lh.gold_schema}[t.layer]}.{t.name}"}
               for t in lh.tables if t.enabled],
+            *dq_resources(meta),
+            *target_resources(meta),
+            *([{"type": "secret_scope", "name": "easyetl", "id": f"{len(self.secret_values)} target secrets"}] if self.secret_values else []),
             {"type": "bundle", "name": name, "path": prefix, "files": sorted(files)},
         ]
         log = [{"step": k, "label": label, "status": "succeeded", "at": _now(), "simulated": True} for k, label in STEPS]
@@ -79,12 +106,16 @@ class DatabricksDeployer:
 
     mode = "databricks"
 
-    def __init__(self, host: str, token: str, warehouse_id: str | None = None):
+    def __init__(self, host: str, token: str | None = None, warehouse_id: str | None = None, headers: dict[str, str] | None = None,
+                 auth_label: str = "Personal access token"):
         import httpx
 
         self.host = host.rstrip("/")
-        self.client = httpx.Client(base_url=self.host, headers={"Authorization": f"Bearer {token}"}, timeout=60)
+        self.client = httpx.Client(base_url=self.host, headers=headers or {"Authorization": f"Bearer {token}"}, timeout=60)
         self.warehouse_id = warehouse_id
+        self.auth_label = auth_label
+        self.secret_values: dict[str, str] = {}
+        self.connections: dict[str, dict] = {}
 
     def _post(self, path: str, body: dict) -> dict:
         r = self.client.post(path, json=body)
@@ -109,13 +140,13 @@ class DatabricksDeployer:
         try:
             state.log.append({"step": "validate", "label": STEPS[0][1], "status": "succeeded", "at": _now()})
             step = "generate"
-            files = build_bundle(meta, target)
+            files = build_bundle(meta, target, self.connections)
             _save_artifacts(pipeline_id, files)
             state.log.append({"step": step, "label": STEPS[1][1], "status": "succeeded", "at": _now()})
 
             step = "unity_catalog"
             lh = meta.lakehouse
-            for stmt in [f"CREATE CATALOG IF NOT EXISTS {lh.catalog}"] + [f"CREATE SCHEMA IF NOT EXISTS {lh.catalog}.{s}" for s in (lh.bronze_schema, lh.silver_schema, lh.gold_schema)] \
+            for stmt in [f"CREATE CATALOG IF NOT EXISTS {lh.catalog}"] + [f"CREATE SCHEMA IF NOT EXISTS {lh.catalog}.{s}" for s in (lh.bronze_schema, lh.silver_schema, lh.gold_schema, meta.quality.dq_schema)] \
                     + [f"CREATE VOLUME IF NOT EXISTS {lh.catalog}.{lh.bronze_schema}.landing"]:
                 self._sql(stmt)
             state.log.append({"step": step, "label": STEPS[2][1], "status": "succeeded", "at": _now()})
@@ -123,7 +154,13 @@ class DatabricksDeployer:
             step = "upload"
             for d in ("src", "config"):
                 self._post("/api/2.0/workspace/mkdirs", {"path": f"{root}/{d}"})
-            for path in ("src/easyetl_pipeline.py", "src/easyetl_runtime.py", "config/pipeline_spec.json"):
+            if self.secret_values:  # target credentials → Databricks secret scope, never into files
+                scope = self.client.post("/api/2.0/secrets/scopes/create", json={"scope": "easyetl"})
+                if scope.status_code >= 400 and "RESOURCE_ALREADY_EXISTS" not in scope.text:
+                    scope.raise_for_status()
+                for key, value in self.secret_values.items():
+                    self._post("/api/2.0/secrets/put", {"scope": "easyetl", "key": key, "string_value": value})
+            for path in [p for p in ("src/easyetl_pipeline.py", "src/easyetl_runtime.py", "src/easyetl_targets.py", "src/easyetl_publish.py", "config/pipeline_spec.json") if p in files]:
                 self._post("/api/2.0/workspace/import", {"path": f"{root}/{path}", "format": "AUTO", "overwrite": True,
                                                           "content": base64.b64encode(files[path].encode()).decode()})
             state.log.append({"step": step, "label": STEPS[3][1], "status": "succeeded", "at": _now()})
@@ -151,6 +188,11 @@ class DatabricksDeployer:
                         "tasks": [{"task_key": "refresh_pipeline", "pipeline_task": {"pipeline_id": pipeline_rid}, "max_retries": meta.ingestion.retries,
                                    "min_retry_interval_millis": meta.ingestion.retry_delay_minutes * 60_000}],
                         "tags": {"managed_by": "easyetl"}}
+            if meta.targets:
+                job_body["tasks"].append({"task_key": "publish_targets", "depends_on": [{"task_key": "refresh_pipeline"}], "environment_key": "default",
+                                          "spark_python_task": {"python_file": f"{root}/src/easyetl_publish.py", "parameters": [f"{root}/config/pipeline_spec.json"]},
+                                          "max_retries": meta.ingestion.retries})
+                job_body["environments"] = [{"environment_key": "default", "spec": {"client": "1", "dependencies": ["requests"]}}]
             if cron:
                 job_body["schedule"] = {"quartz_cron_expression": cron, "timezone_id": "UTC", "pause_status": "UNPAUSED"}
             job_id = self._post("/api/2.1/jobs/create", job_body)["job_id"]
@@ -179,7 +221,29 @@ class DatabricksDeployer:
         return state
 
 
-def get_deployer() -> Any:
+def deployment_connection(db: Any, tenant_id: str) -> Any:
+    """The tenant's Databricks connection marked 'Deploy EasyETL pipelines to this workspace', if any."""
+    from sqlalchemy import select
+
+    from ..core.models import Connection
+
+    rows = db.scalars(select(Connection).where(Connection.tenant_id == tenant_id, Connection.connector == "databricks")).all()
+    return next((c for c in rows if (c.config or {}).get("use_for_deployment")), None)
+
+
+def get_deployer(db: Any = None, tenant_id: str | None = None) -> Any:
+    """A saved Databricks connection (any auth method) wins; then EASYETL_DATABRICKS_HOST/TOKEN; else simulation."""
+    if db is not None and tenant_id:
+        conn = deployment_connection(db, tenant_id)
+        if conn and (conn.config.get("host") or "").strip().lower() not in ("", "demo", "demo.cloud.databricks.com"):
+            from ..core.security import SecretStore
+            from .databricks_auth import METHODS, auth_headers, normalize_host, warehouse_id_from
+
+            secrets = SecretStore(db, tenant_id).get(conn.secret_ref)
+            method = conn.config.get("auth_method") or "pat"
+            host = normalize_host(conn.config["host"])
+            return DatabricksDeployer(host, headers=auth_headers(host, method, conn.config, secrets), warehouse_id=warehouse_id_from(conn.config),
+                                      auth_label=METHODS.get(method, method))
     s = get_settings()
     if s.databricks_host and s.databricks_token:
         return DatabricksDeployer(s.databricks_host, s.databricks_token)

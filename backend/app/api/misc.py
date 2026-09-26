@@ -292,8 +292,19 @@ def global_assistant(body: GlobalAsk, db: DB, user: User):
 
 # ------------------------------------------------------------------ settings & audit
 @router.get("/settings")
-def settings(user: User):
-    return service.settings_summary()
+def settings(db: DB, user: User):
+    from ..deploy.databricks_auth import METHODS
+    from ..deploy.deployer import deployment_connection
+
+    out = service.settings_summary()
+    conn = deployment_connection(db, user.tenant_id)
+    if conn:
+        demo = (conn.config.get("host") or "").strip().lower() in ("", "demo", "demo.cloud.databricks.com")
+        out["deployment_connection"] = {"id": conn.id, "name": conn.name, "host": conn.config.get("host"), "demo": demo,
+                                        "auth": METHODS.get(conn.config.get("auth_method") or "pat"), "connection_type": conn.config.get("connection_type")}
+        if not demo:
+            out["databricks_connected"], out["databricks_host"] = True, conn.config.get("host")
+    return out
 
 
 @router.get("/audit")

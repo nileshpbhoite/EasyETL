@@ -41,7 +41,7 @@ class DatasetRef(BaseModel):
 
 
 class SourceConfig(BaseModel):
-    category: Literal["file", "application", "database", "cloud_storage", "api", "none"] = "none"
+    category: Literal["file", "application", "database", "warehouse", "cloud_storage", "streaming", "nosql", "api", "none"] = "none"
     connector: str | None = None
     name: str | None = None
     connection_id: str | None = None
@@ -189,12 +189,46 @@ class QualityRule(BaseModel):
     column: str | None = None
     dimension: Literal["completeness", "uniqueness", "validity", "accuracy", "consistency", "referential_integrity",
                        "range", "pattern", "custom"] = "validity"
-    rule: str  # not_null | unique | email | phone | regex | range | in_set | in_reference | min_length | expression
-    params: dict[str, Any] = Field(default_factory=dict)
+    rule: str  # not_null | unique | email | phone | regex | range | in_set | in_reference | min_length | date | expression
+    params: dict[str, Any] = Field(default_factory=dict)  # expression rules: {"sql": "<Databricks SQL boolean predicate>"}
     description: str = ""
-    on_fail: Literal["warn", "drop", "quarantine", "fail"] = "warn"
+    # What happens to a record that fails: flag = load it with _dq_issues/_dq_status columns; quarantine = park it in the
+    # DQ quarantine table instead of the target; drop = discard; fail = stop the pipeline run. ('warn' is the legacy name of flag.)
+    on_fail: Literal["warn", "flag", "drop", "quarantine", "fail"] = "flag"
     enabled: bool = True
-    origin: Literal["user", "ai", "template"] = "user"
+    origin: Literal["user", "ai", "template", "nl", "excel", "recommendation"] = "user"
+    name: str | None = None
+    severity: Literal["critical", "high", "medium", "low"] = "medium"
+    # Red/Amber/Green scoring: pass rate >= green → Green, >= amber → Amber, else Red
+    threshold_green: float = 99.0
+    threshold_amber: float = 95.0
+    source_text: str | None = None  # the plain-English rule as written (AI text box or Excel)
+
+    def action(self) -> str:
+        return "flag" if self.on_fail == "warn" else self.on_fail
+
+
+class QualityConfig(BaseModel):
+    """Pipeline-wide data quality behaviour."""
+    default_action: Literal["flag", "quarantine"] = "quarantine"
+    dq_schema: str = "dq"  # quarantine + results tables live in <catalog>.<dq_schema>
+    add_dq_columns: bool = True  # _dq_issues / _dq_status on loaded records
+    fail_run_below: float | None = None  # stop the run if the overall DQ score falls below this
+
+
+class TargetConfig(BaseModel):
+    """An extra destination the curated data is published to after each run (besides Unity Catalog)."""
+    id: str = Field(default_factory=lambda: short_id("tg_"))
+    connection_id: str
+    connector: str
+    name: str = ""
+    tables: list[str] = Field(default_factory=list)  # lakehouse table names; empty = all Gold tables
+    mode: Literal["append", "overwrite", "merge"] = "overwrite"
+    merge_keys: list[str] = Field(default_factory=list)
+    destination: str = ""  # schema / folder / topic / object — connector specific
+    file_format: Literal["delta", "parquet", "csv", "json"] = "parquet"
+    include_flagged: bool = True  # also send records that carry DQ flags
+    enabled: bool = True
 
 
 # ------------------------------------------------------------------ deployment
@@ -204,6 +238,8 @@ class DeploymentState(BaseModel):
     target_environment: str = "development"
     workspace_url: str | None = None
     deployed_at: str | None = None
+    # rule_id → {name, dataset, action, severity, rate (share of records failing on the approved sample)}; drives run-level DQ results
+    dq_baseline: dict[str, dict[str, Any]] = Field(default_factory=dict)
     deployed_version: int | None = None
     resources: list[dict[str, Any]] = Field(default_factory=list)
     log: list[dict[str, Any]] = Field(default_factory=list)
@@ -234,6 +270,8 @@ class PipelineMetadata(BaseModel):
     lakehouse: LakehouseDesign = Field(default_factory=LakehouseDesign)
     governance: GovernanceConfig = Field(default_factory=GovernanceConfig)
     quality_rules: list[QualityRule] = Field(default_factory=list)
+    quality: QualityConfig = Field(default_factory=QualityConfig)
+    targets: list[TargetConfig] = Field(default_factory=list)
     health_check: HealthCheckResult = Field(default_factory=HealthCheckResult)
     deployment: DeploymentState = Field(default_factory=DeploymentState)
     history: list[dict[str, Any]] = Field(default_factory=list)
@@ -296,5 +334,18 @@ class PipelineMetadata(BaseModel):
             "ingestion": self.ingestion.model_dump(exclude={"notes", "rationale", "recommended_engine"}),
             "lakehouse": self.lakehouse.model_dump(exclude={"rationale"}),
             "governance": self.governance.model_dump(),
-            "quality_rules": [{**r.model_dump(), "column": self.resolve_column(r.dataset_id, r.column)} for r in self.quality_rules if r.enabled],
+            "quality_rules": [self._export_rule(r) for r in self.quality_rules if r.enabled],
+            "quality": self.quality.model_dump(),
+            "targets": [t.model_dump() for t in self.targets if t.enabled],
         }
+
+    def _export_rule(self, r: QualityRule) -> dict[str, Any]:
+        """Rules are written against source column names; the deployed rule must use the post-transformation names."""
+        from .quality import rule_sql
+
+        rr = r.model_copy(update={"column": self.resolve_column(r.dataset_id, r.column)})
+        if r.rule == "expression":
+            from .dq_sql import rename_columns
+
+            rr.params = {**r.params, "sql": rename_columns(r.params.get("sql", "TRUE"), lambda c: self.resolve_column(r.dataset_id, c) or c)}
+        return {**rr.model_dump(), "on_fail": r.action(), "sql": rule_sql(rr)}

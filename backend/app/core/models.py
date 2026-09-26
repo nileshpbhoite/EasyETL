@@ -83,6 +83,7 @@ class Connection(Base):
     tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True)
     name: Mapped[str] = mapped_column(String(200))
     connector: Mapped[str] = mapped_column(String(64))
+    usage: Mapped[str] = mapped_column(String(16), default="source")  # source | target | both
     config: Mapped[dict] = mapped_column(JSON, default=dict)
     secret_ref: Mapped[str | None] = mapped_column(String(64), nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="untested")

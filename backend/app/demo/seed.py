@@ -124,6 +124,7 @@ def _build(db: Session, user: CurrentUser, name: str, connector: str, config: di
             meta.mark_complete("review")
             state = SimulatedDeployer().deploy(row.id, meta, "production")
             state.deployed_version = row.version + 1
+            state.dq_baseline = service.dq_baseline(rt)
             meta.deployment = state
             meta.mark_complete("deploy")
             meta.current_step = "monitor"

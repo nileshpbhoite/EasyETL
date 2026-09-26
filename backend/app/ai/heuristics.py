@@ -424,7 +424,18 @@ def recommend_ingestion(meta: PipelineMetadata) -> dict:
         if formats & {"json", "xml"}:
             notes.append("Unexpected fields in JSON/XML are kept in a rescued-data column instead of failing the load.")
         frequency = "daily"
-    elif cat == "database":
+    elif cat == "streaming":
+        engine, mode = "streaming", "incremental"
+        rationale = (f"Recommended because {src.name or 'this source'} is an event stream. Structured Streaming reads new messages continuously "
+                     "with exactly-once checkpoints, so data lands in Bronze within seconds.")
+        schema_evo, frequency = "rescue", "continuous"
+    elif cat == "nosql":
+        engine, mode = ("lakeflow_connect" if cdc else "batch"), "incremental" if (cdc or inc_field) else "full"
+        rationale = ("Recommended because the store exposes a change feed — only changed documents are read each run." if cdc else
+                     "Scheduled batch reads with the store's Spark connector" + (f", incremental on '{inc_field}'." if inc_field else "."))
+        notes.append("Nested documents are kept as structs in Bronze and flattened in Silver.")
+        schema_evo, frequency = "rescue", "hourly"
+    elif cat in ("database", "warehouse"):
         if cdc:
             engine, mode = "lakeflow_connect", "incremental"
             rationale = ("Recommended because the database supports Change Data Capture. Lakeflow Connect reads only inserts, updates and deletes "

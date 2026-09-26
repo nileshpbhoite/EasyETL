@@ -48,6 +48,17 @@ def validate_quality_rule(rule: QualityRule, meta: PipelineMetadata, columns: li
         problems.append("Unknown dataset.")
     if rule.column and rule.column not in columns:
         problems.append(f"Column '{rule.column}' doesn't exist.")
+    if not 0 <= rule.threshold_amber <= rule.threshold_green <= 100:
+        problems.append("RAG thresholds must satisfy 0 ≤ Amber ≤ Green ≤ 100.")
+    if rule.rule == "expression":
+        # SQL rules pass through the strict predicate validator: one boolean condition, known columns, whitelisted functions.
+        from ..engine.dq_sql import DQSqlError, validate
+
+        try:
+            rule.params = {**rule.params, "sql": validate(str(rule.params.get("sql") or ""), columns)[0]}
+        except DQSqlError as e:
+            problems.append(str(e))
+        return problems + _scan({k: v for k, v in rule.params.items() if k != "sql"})
     return problems + _scan(rule.params)
 
 

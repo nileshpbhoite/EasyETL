@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleCheck, CircleX, KeyRound, Plug, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { ArrowDownToLine, ArrowUpFromLine, CircleCheck, CircleX, KeyRound, Plug, Repeat, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Badge, Button, Field, Input, KeyValueEditor, Segmented, Select, Switch, Textarea } from "@/components/ui";
 import { api, type ApiError } from "@/lib/api";
@@ -17,12 +17,16 @@ export interface TestResult {
   technical?: string | null;
 }
 
+export type Usage = "source" | "target" | "both";
+
 export interface ConnectionPayload {
   connector: string;
   name: string;
+  usage: Usage;
   auth_method: string | null;
   config: Record<string, unknown>;
   secrets: Record<string, unknown>;
+  connection_id?: string;
 }
 
 function FieldInput({ f, value, onChange }: { f: FieldSpec; value: unknown; onChange: (v: unknown) => void }) {
@@ -47,7 +51,7 @@ export function TestResultCard({ result }: { result: TestResult }) {
     <div className={cn("rounded-xl border p-4 animate-slide-up", result.ok ? "border-emerald-200 bg-emerald-50/60" : "border-rose-200 bg-rose-50/60")}>
       <div className="flex items-center gap-2 font-semibold">
         {result.ok ? <CircleCheck className="size-5 text-emerald-600" /> : <CircleX className="size-5 text-rose-600" />}
-        <span className={result.ok ? "text-emerald-900" : "text-rose-900"}>{result.ok ? `✓ ${result.title}` : result.title}</span>
+        <span className={result.ok ? "text-emerald-900" : "text-rose-900"}>{result.title}</span>
       </div>
       <div className={cn("mt-1 text-sm", result.ok ? "text-emerald-800" : "text-rose-800")}>{result.message}</div>
       {result.ok && Object.keys(result.info).length > 0 && (
@@ -72,13 +76,37 @@ export function TestResultCard({ result }: { result: TestResult }) {
   );
 }
 
-export function ConnectionForm({ spec, onConnect, connectLabel = "Connect & discover", connecting, initial }: {
+function visible(f: FieldSpec, values: Record<string, unknown>, fields: FieldSpec[]): boolean {
+  if (!f.show_if) return true;
+  return Object.entries(f.show_if).every(([k, allowed]) => {
+    const dep = fields.find((x) => x.name === k);
+    const v = values[k] ?? dep?.default;
+    return allowed.includes(String(v ?? ""));
+  });
+}
+
+const USAGE_OPTS: { value: Usage; label: string; icon: React.ReactNode; hint: string }[] = [
+  { value: "source", label: "Source", icon: <ArrowDownToLine />, hint: "Read data from it" },
+  { value: "target", label: "Target", icon: <ArrowUpFromLine />, hint: "Publish curated data to it" },
+  { value: "both", label: "Both", icon: <Repeat />, hint: "Read and publish" },
+];
+
+export function ConnectionForm({ spec, onConnect, connectLabel = "Connect & discover", connecting, initial, usage: fixedUsage, defaultUsage = "source", allowedUsages }: {
   spec: ConnectorSpec;
   onConnect: (payload: ConnectionPayload) => void;
   connectLabel?: string;
   connecting?: boolean;
   initial?: Record<string, unknown>;
+  /** Force the usage (e.g. "target" when adding a publish target) — hides the chooser. */
+  usage?: Usage;
+  defaultUsage?: Usage;
+  /** Restrict the usage chooser (e.g. a pipeline source can be Source or Both, not Target-only). */
+  allowedUsages?: Usage[];
 }) {
+  const roles = spec.roles ?? ["source"];
+  const canTarget = roles.includes("target");
+  const canSource = roles.includes("source");
+  const [usage, setUsage] = useState<Usage>(fixedUsage ?? (canSource ? (canTarget ? defaultUsage : "source") : "target"));
   const [authId, setAuthId] = useState(spec.auth_methods[0]?.id ?? null);
   const [values, setValues] = useState<Record<string, unknown>>(() => {
     const v: Record<string, unknown> = {};
@@ -89,7 +117,8 @@ export function ConnectionForm({ spec, onConnect, connectLabel = "Connect & disc
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<TestResult | null>(null);
   const auth = spec.auth_methods.find((a) => a.id === authId);
-  const fields = useMemo(() => [...spec.config_fields, ...(auth?.fields ?? [])], [spec, auth]);
+  const allFields = useMemo(() => [...spec.config_fields, ...(auth?.fields ?? [])], [spec, auth]);
+  const fields = allFields.filter((f) => visible(f, values, allFields));
   const hasAdvanced = fields.some((f) => f.advanced);
 
   const payload = (): ConnectionPayload => {
@@ -100,7 +129,7 @@ export function ConnectionForm({ spec, onConnect, connectLabel = "Connect & disc
       if (v === undefined || v === "") continue;
       (f.secret ? secrets : config)[f.name] = v;
     }
-    return { connector: spec.id, name: String(values.__name || spec.name), auth_method: authId, config, secrets };
+    return { connector: spec.id, name: String(values.__name || spec.name), usage, auth_method: authId, config, secrets };
   };
 
   const missing = fields.filter((f) => f.required && (values[f.name] === undefined || values[f.name] === "")).map((f) => f.label);
@@ -131,9 +160,27 @@ export function ConnectionForm({ spec, onConnect, connectLabel = "Connect & disc
           <div className="text-sm text-slate-500">{spec.description}</div>
         </div>
       </div>
+      {!fixedUsage && canTarget && (
+        <Field label="Use this connection as" help={usage !== "source" ? spec.target_note ?? undefined : undefined}>
+          <div className={cn("grid gap-2", allowedUsages && allowedUsages.length === 2 ? "grid-cols-2" : "grid-cols-3")}>
+            {USAGE_OPTS.filter((o) => (o.value === "source" ? canSource : o.value === "target" ? canTarget : canSource && canTarget) && (!allowedUsages || allowedUsages.includes(o.value))).map((o) => (
+              <button key={o.value} type="button" onClick={() => setUsage(o.value)}
+                className={cn("flex items-center gap-2.5 rounded-xl border-2 px-3 py-2 text-left transition-all [&_svg]:size-4",
+                  usage === o.value ? "border-brand-400 bg-brand-50/70 text-brand-700" : "border-slate-200/80 bg-white/70 text-slate-600 hover:border-brand-200")}>
+                {o.icon}
+                <span className="leading-tight"><span className="block text-[13px] font-semibold">{o.label}</span><span className="block text-[11px] text-slate-500">{o.hint}</span></span>
+              </button>
+            ))}
+          </div>
+        </Field>
+      )}
       {spec.auth_methods.length > 1 && (
         <Field label="Authentication">
-          <Segmented size="sm" value={authId ?? ""} onChange={(v) => { setAuthId(v); setResult(null); }} options={spec.auth_methods.map((a) => ({ value: a.id, label: a.label }))} />
+          {spec.auth_methods.length > 3 ? (
+            <Select value={authId ?? ""} onChange={(v) => { setAuthId(v); setResult(null); }} options={spec.auth_methods.map((a) => ({ value: a.id, label: a.label }))} />
+          ) : (
+            <Segmented size="sm" value={authId ?? ""} onChange={(v) => { setAuthId(v); setResult(null); }} options={spec.auth_methods.map((a) => ({ value: a.id, label: a.label }))} />
+          )}
         </Field>
       )}
       <div className="grid gap-4 sm:grid-cols-2">
@@ -141,7 +188,7 @@ export function ConnectionForm({ spec, onConnect, connectLabel = "Connect & disc
           <Input value={String(values.__name ?? "")} onChange={(e) => setValues({ ...values, __name: e.target.value })} placeholder={`${spec.name} — production`} />
         </Field>
         {fields.filter((f) => !f.advanced || advanced).map((f) => (
-          <Field key={f.name} label={<span className="flex items-center gap-1">{f.secret && <KeyRound className="size-3 text-slate-400" />}{f.label}</span>} required={f.required} help={f.help} className={cn((f.type === "keyvalue" || f.type === "textarea" || f.type === "url") && "sm:col-span-2")}>
+          <Field key={f.name} label={<span className="inline-flex items-center gap-1">{f.secret && <KeyRound className="size-3 text-slate-400" />}{f.label}</span>} required={f.required} help={f.help} className={cn((f.type === "keyvalue" || f.type === "textarea" || f.type === "url") && "sm:col-span-2")}>
             <FieldInput f={f} value={values[f.name]} onChange={(v) => { setValues({ ...values, [f.name]: v }); setResult(null); }} />
           </Field>
         ))}

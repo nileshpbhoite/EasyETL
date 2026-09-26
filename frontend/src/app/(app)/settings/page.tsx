@@ -1,6 +1,7 @@
 "use client";
 
 import { Brain, CircleCheck, CircleX, FileClock, KeyRound, Server, ShieldCheck, Users } from "lucide-react";
+import Link from "next/link";
 import { Badge, Callout, Card, CardHeader, Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui";
 import { getStoredUser } from "@/lib/api";
 import { useApi } from "@/lib/hooks";
@@ -15,7 +16,8 @@ const MATRIX: [string, string[]][] = [
 ];
 
 export default function SettingsPage() {
-  const { data } = useApi<{ ai_provider: string; databricks_connected: boolean; databricks_host?: string; environment: string }>("/api/settings");
+  const { data } = useApi<{ ai_provider: string; databricks_connected: boolean; databricks_host?: string; environment: string;
+    deployment_connection?: { id: string; name: string; host: string; demo: boolean; auth: string; connection_type?: string } }>("/api/settings");
   const user = typeof window !== "undefined" ? getStoredUser() : null;
   const isAdmin = user?.role === "admin";
   const { data: audit } = useApi<{ id: number; action: string; resource: string; user_id?: string; details: Record<string, unknown>; at: string }[]>(isAdmin ? "/api/audit?limit=100" : null);
@@ -32,9 +34,21 @@ export default function SettingsPage() {
           <Card>
             <CardHeader title="Databricks workspace" description="Where pipelines are deployed" icon={<Server />} actions={data?.databricks_connected ? <Badge tone="green"><CircleCheck /> Connected</Badge> : <Badge tone="amber"><CircleX /> Not connected</Badge>} />
             <div className="space-y-3 p-5 text-sm text-slate-600">
-              {data?.databricks_connected ? <div>Workspace: <code>{data.databricks_host}</code></div> : (
+              {data?.deployment_connection && (
+                <div className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
+                  <div>Connection: <b>{data.deployment_connection.name}</b></div>
+                  <div>Workspace: <code>{data.deployment_connection.host}</code>{data.deployment_connection.demo && " (simulated)"}</div>
+                  <div>Authentication: <b>{data.deployment_connection.auth}</b></div>
+                  <div>Connects through: <b>{humanize(data.deployment_connection.connection_type ?? "sql_warehouse")}</b></div>
+                </div>
+              )}
+              {data?.databricks_connected && !data.deployment_connection && <div>Workspace: <code>{data.databricks_host}</code> (server configuration)</div>}
+              {!data?.databricks_connected && (
                 <Callout tone="info" title="Running in safe simulation mode">
-                  Deployments, runs and monitoring are simulated end-to-end. To deploy for real, set <code>EASYETL_DATABRICKS_HOST</code> and <code>EASYETL_DATABRICKS_TOKEN</code> (a service principal token stored in your secret manager) on the EasyETL server and restart. The same deployment flow is used — no pipeline changes needed.
+                  Deployments, runs and monitoring are simulated end-to-end. To deploy for real, add a <b>Databricks</b> connection on the Sources & Targets page
+                  (personal access token, OAuth service principal, Entra ID service principal, managed identity, Azure CLI, GCP service account or a CLI profile)
+                  and switch on <b>Deploy here</b>. The same deployment flow is used — no pipeline changes needed.
+                  <div className="mt-2"><Link href="/sources" className="font-semibold text-brand-600 hover:underline">Connect Databricks →</Link></div>
                 </Callout>
               )}
               <div>Environment: <b>{data?.environment}</b></div>

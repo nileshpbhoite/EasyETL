@@ -6,6 +6,7 @@ import { useState } from "react";
 import { Architecture } from "@/components/lakehouse/Architecture";
 import { GovernancePanel } from "@/components/governance/GovernancePanel";
 import { QualityPanel } from "@/components/quality/QualityPanel";
+import { TargetsPanel } from "@/components/targets/TargetsPanel";
 import { AIBadge, Badge, Button, Dialog, Field, Input, Switch } from "@/components/ui";
 import { Cylinder } from "@/components/lakehouse/Cylinder";
 import { FileTypeIcon } from "@/components/source/FileTypeIcon";
@@ -47,7 +48,7 @@ export function DesignStep({ pipeline, mutate, busy, goTo }: StepProps) {
   const meta = pipeline.metadata;
   const lh = meta.lakehouse;
   const advanced = meta.mode === "advanced";
-  const [tab, setTab] = useState<"lakehouse" | "governance" | "quality">((params.get("tab") as "lakehouse") ?? "lakehouse");
+  const [tab, setTab] = useState<"lakehouse" | "governance" | "quality" | "targets">((params.get("tab") as "lakehouse") ?? "lakehouse");
   const [view, setView] = useState<"simple" | "advanced" | "custom">(advanced ? "advanced" : "simple");
   const [selected, setSelected] = useState<TableDesign | null>(null);
   const [dialogTable, setDialogTable] = useState<TableDesign | null>(null);
@@ -75,7 +76,8 @@ export function DesignStep({ pipeline, mutate, busy, goTo }: StepProps) {
 
   return (
     <div className="animate-fade-in">
-      <PillTabs value={tab} onChange={setTab} className="mb-4" tabs={[{ value: "lakehouse", label: "Lakehouse" }, { value: "governance", label: "Governance" }, { value: "quality", label: "Data Quality" }]} />
+      <PillTabs value={tab} onChange={setTab} className="mb-4" tabs={[{ value: "lakehouse", label: "Lakehouse" }, { value: "governance", label: "Governance" }, { value: "quality", label: `Data Quality (${meta.quality_rules.filter((r) => r.enabled).length})` },
+        { value: "targets", label: `Targets (${1 + meta.targets.filter((t) => t.enabled).length})` }]} />
       {tab === "lakehouse" && (
         <SectionCard icon={<Layers />} title="Design Lakehouse" subtitle="Choose architecture and let AI optimize it" help="Bronze keeps raw data, Silver holds cleaned tables, Gold holds business-ready models."
           actions={<Button variant="secondary" size="sm" onClick={() => mutate("regen", () => api.post<Pipeline>(`/api/pipelines/${pipeline.id}/lakehouse/regenerate`), { success: "Design regenerated" })} loading={busy === "regen"}><RefreshCw /> Regenerate with AI</Button>}>
@@ -181,6 +183,7 @@ export function DesignStep({ pipeline, mutate, busy, goTo }: StepProps) {
       )}
       {tab === "governance" && <GovernancePanel pipeline={pipeline} mutate={mutate} />}
       {tab === "quality" && <QualityPanel pipeline={pipeline} mutate={mutate} />}
+      {tab === "targets" && <TargetsPanel pipeline={pipeline} mutate={mutate} />}
       <Dialog open={!!dialogTable} onOpenChange={(v) => !v && setDialogTable(null)} title={dialogTable?.name ?? ""} description={dialogTable ? `${lh.catalog}.${dialogTable.layer === "gold" ? lh.gold_schema : dialogTable.layer === "silver" ? lh.silver_schema : lh.bronze_schema}.${dialogTable.name}` : ""} size="md">
         {dialogTable && <TableEditor key={dialogTable.id} table={dialogTable} advanced={advanced || view === "custom"} onSave={(t) => { void update({ tables: lh.tables.map((x) => (x.id === t.id ? t : x)) }, "Table updated"); setDialogTable(null); }} />}
       </Dialog>

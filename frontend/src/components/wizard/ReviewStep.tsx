@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, Brain, CalendarClock, CircleCheck, CircleX, Cpu, DollarSign, Info, Layers, LayoutTemplate, Lock, Rocket, ShieldCheck, TriangleAlert, Wand, Zap, ClipboardCheck } from "lucide-react";
+import { ArrowRight, Brain, CalendarClock, CircleCheck, CircleX, Cpu, DollarSign, Info, Layers, LayoutTemplate, Lock, Rocket, ShieldCheck, TriangleAlert, Wand, Zap, ClipboardCheck, ArrowUpFromLine } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Architecture } from "@/components/lakehouse/Architecture";
@@ -127,7 +127,10 @@ export function ReviewStep({ pipeline, mutate, busy, goTo }: StepProps) {
                 <SummaryRow icon={<Zap className="size-5 text-amber-600" />} color="bg-amber-50" title="Ingestion Method" lines={[`${ENGINES[meta.ingestion.engine]?.label} (${humanize(meta.ingestion.mode)})`]} onEdit={() => goTo("configure")} />
                 <SummaryRow icon={<Wand className="size-5 text-brand-600" />} color="bg-brand-50" title="Transformations" lines={[`${steps.length} steps · ${steps.filter((s) => s.origin === "ai").length} recommended by AI`]} onEdit={() => goTo("transform")} />
                 <SummaryRow icon={<Layers className="size-5 text-orange-600" />} color="bg-orange-50" title="Lakehouse Architecture" lines={[`Bronze → Silver → Gold (${layer("bronze").length} · ${layer("silver").length} · ${layer("gold").length} tables)`]} onEdit={() => goTo("design")} />
-                <SummaryRow icon={<ShieldCheck className="size-5 text-emerald-600" />} color="bg-emerald-50" title="Data Quality" lines={[`${meta.quality_rules.filter((r) => r.enabled).length} checks enabled · quality ${qBefore ? `${qBefore.toFixed(0)}%` : "—"} → ${qAfter ? `${qAfter.toFixed(0)}%` : "—"}`]} onEdit={() => goTo("design")} />
+                <SummaryRow icon={<ShieldCheck className="size-5 text-emerald-600" />} color="bg-emerald-50" title="Data Quality" lines={[`${meta.quality_rules.filter((r) => r.enabled).length} checks enabled · quality ${qBefore ? `${qBefore.toFixed(0)}%` : "—"} → ${qAfter ? `${qAfter.toFixed(0)}%` : "—"}`,
+                  meta.quality?.default_action === "flag" ? "Failing records are loaded with DQ flags (_dq_issues)" : `Failing records are quarantined in ${lh.catalog}.${meta.quality?.dq_schema ?? "dq"}`]} onEdit={() => goTo("design")} />
+                <SummaryRow icon={<ArrowUpFromLine className="size-5 text-ai-600" />} color="bg-ai-50" title="Targets" lines={[
+                  ["Databricks Unity Catalog", ...(meta.targets ?? []).filter((t) => t.enabled).map((t) => `${t.name} (${t.mode})`)].join(" · ")]} onEdit={() => goTo("design")} />
                 <SummaryRow icon={<Lock className="size-5 text-brand-600" />} color="bg-brand-50" title="Governance" lines={[<>Unity Catalog <span className="text-slate-400">(catalog: {lh.catalog})</span> · {meta.governance.pii.length} PII columns</>]} onEdit={() => goTo("design")} />
                 <SummaryRow icon={<Cpu className="size-5 text-brand-600" />} color="bg-brand-50" title="Compute" lines={[meta.ingestion.compute === "serverless" ? "Serverless (Recommended)" : `${humanize(meta.ingestion.compute)} cluster`]} onEdit={() => goTo("configure")} />
                 <SummaryRow icon={<CalendarClock className="size-5 text-slate-600" />} color="bg-slate-100" title="Schedule" lines={[humanize(meta.ingestion.frequency) + (meta.ingestion.frequency === "daily" ? ` at ${meta.ingestion.schedule_time} UTC` : "")]} onEdit={() => goTo("configure")} />

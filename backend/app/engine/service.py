@@ -227,6 +227,27 @@ def run_analysis(rt: PipelineRuntime) -> dict[str, Any]:
             "template_steps_bound": bound, "ingestion_alternatives": alternatives}
 
 
+def dq_baseline(rt: PipelineRuntime) -> dict[str, dict[str, Any]]:
+    """Failure rate of every enabled rule on the transformed sample — the expected DQ profile of a production run."""
+    from . import quality as dq
+
+    meta = rt.meta
+    out: dict[str, dict[str, Any]] = {}
+    for ds in meta.selected_datasets():
+        rules = [r.model_copy(update={"column": meta.resolve_column(ds.id, r.column)}) for r in meta.quality_rules if r.dataset_id == ds.id and r.enabled]
+        if not rules:
+            continue
+        try:
+            res = dq.evaluate(rt.transformed(ds.id), rules, rt.transformed)
+        except Exception:  # noqa: BLE001 — informational only
+            continue
+        n = max(res["records"], 1)
+        for r, rr in zip(rules, res["rules"]):
+            out[r.id] = {"name": r.name or r.description, "dataset": ds.name, "action": r.action(), "severity": r.severity,
+                         "rate": (rr.get("failed") or 0) / n, "green": r.threshold_green, "amber": r.threshold_amber}
+    return out
+
+
 def refresh_quality_after(rt: PipelineRuntime) -> None:
     """Projected quality after the current transformation steps (shown on cards, dashboards and reviews)."""
     from ..profiling.profiler import light_quality

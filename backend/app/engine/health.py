@@ -179,11 +179,48 @@ def run_health_check(rt: PipelineRuntime) -> HealthCheckResult:
                          "Some steps depend on unselected datasets." if deps else "All dataset dependencies are satisfied.",
                          fix="select_dependencies" if deps else None, details=deps))
 
-    # 12 Deployment target
+    # 12 Publish targets
+    if meta.targets:
+        from ..connectors.registry import CONNECTORS
+        from ..core.models import Connection
+
+        problems = []
+        table_names = {t.name for t in meta.lakehouse.tables if t.enabled}
+        for t in meta.targets:
+            if not t.enabled:
+                continue
+            conn = rt.db.get(Connection, t.connection_id)
+            label = t.name or t.connector
+            if not conn or conn.tenant_id != rt.tenant_id:
+                problems.append(f"{label}: the connection was deleted")
+                continue
+            spec = CONNECTORS[conn.connector].spec
+            if (conn.usage or "source") == "source":
+                problems.append(f"{label}: the connection is set up as a source only")
+            if t.mode not in spec.target_modes:
+                problems.append(f"{label}: '{t.mode}' isn't supported (use {', '.join(spec.target_modes)})")
+            if t.mode == "merge" and not t.merge_keys:
+                problems.append(f"{label}: merge needs key column(s)")
+            missing = [n for n in t.tables if n not in table_names]
+            if missing:
+                problems.append(f"{label}: unknown table(s) {', '.join(missing)}")
+        checks.append(_check("targets", "Targets Configured", "fail" if problems else "pass",
+                             "Some publish targets need attention." if problems else f"{sum(1 for t in meta.targets if t.enabled)} extra target(s) will receive curated data after each run.",
+                             details=problems))
+
+    # 13 Deployment target
+    from ..deploy.deployer import deployment_connection
+
     s = get_settings()
-    live = bool(s.databricks_host and s.databricks_token)
-    checks.append(_check("deployment", "Deployment Ready", "pass" if live else "info",
-                         f"Workspace {s.databricks_host} is connected." if live else "No Databricks workspace connected — deployment will run in safe simulation mode."))
+    conn = deployment_connection(rt.db, rt.tenant_id)
+    demo = conn is not None and (conn.config.get("host") or "").strip().lower() in ("", "demo", "demo.cloud.databricks.com")
+    if conn and not demo:
+        checks.append(_check("deployment", "Deployment Ready", "pass", f"Deploying to {conn.config.get('host')} ({conn.name})."))
+    elif s.databricks_host and s.databricks_token:
+        checks.append(_check("deployment", "Deployment Ready", "pass", f"Workspace {s.databricks_host} is connected."))
+    else:
+        checks.append(_check("deployment", "Deployment Ready", "info",
+                             "No Databricks workspace connected — deployment will run in safe simulation mode. Add a Databricks connection and choose 'Deploy EasyETL pipelines to this workspace'."))
 
     fails = sum(1 for c in checks if c["status"] == "fail")
     warns = sum(1 for c in checks if c["status"] == "warn")

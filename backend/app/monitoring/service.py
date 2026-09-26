@@ -47,6 +47,37 @@ def _baseline(meta: PipelineMetadata) -> dict[str, float]:
             "cost": cost["compute_usd"] / max(cost["runs_per_month"], 1), "storage": max(cost["storage_gb"], 0.01)}
 
 
+_SEV_W = {"critical": 4, "high": 3, "medium": 2, "low": 1}
+
+
+def _dq_for_run(meta: PipelineMetadata, records: int, rng: random.Random, anomaly: str | None) -> dict[str, Any] | None:
+    """Per-rule DQ results of a (simulated) run, scaled from the failure rates measured on the approved sample."""
+    base = meta.deployment.dq_baseline
+    if not base or records <= 0:
+        return None
+    spiking = set(sorted(base, key=lambda k: -base[k]["rate"])[:2]) if anomaly == "quality" else set()
+    rules = []
+    totals = {"flag": 0, "quarantine": 0, "drop": 0, "fail": 0}
+    for rid, b in base.items():
+        rate = b["rate"] * rng.uniform(0.75, 1.25)
+        if rid in spiking:
+            rate = min(1.0, rate * 3 + 0.04)
+        failed = min(records, int(round(records * rate)))
+        pr = round((1 - failed / records) * 100, 2)
+        rag = "green" if pr >= b.get("green", 99) else "amber" if pr >= b.get("amber", 95) else "red"
+        rules.append({"rule_id": rid, "name": b["name"], "dataset": b["dataset"], "action": b["action"], "severity": b["severity"],
+                      "failed": failed, "pass_rate": pr, "rag": rag})
+        totals[b["action"]] += failed
+    quarantined = min(records, totals["quarantine"])
+    dropped = min(records - quarantined, totals["drop"])
+    flagged = min(records - quarantined - dropped, totals["flag"])
+    weights = [(r["pass_rate"], _SEV_W.get(r["severity"], 2)) for r in rules]
+    score = round(sum(p * w for p, w in weights) / sum(w for _, w in weights), 1)
+    return {"issues": sum(r["failed"] for r in rules), "quarantined": quarantined, "dropped": dropped, "flagged": flagged,
+            "loaded": records - quarantined - dropped, "score": score, "rules": rules,
+            "rag": {k: sum(1 for r in rules if r["rag"] == k) for k in ("green", "amber", "red")}}
+
+
 def _make_run(pipeline_id: str, meta: PipelineMetadata, at: datetime, idx: int, base: dict, anomaly: str | None = None) -> PipelineRun:
     rng = random.Random(_seed(pipeline_id, at.isoformat()))
     hour_factor = 1.0 + 0.25 * (1 if 8 <= at.hour <= 18 else -0.4) if meta.ingestion.frequency in ("hourly", "every_15_min") else 1.0
@@ -73,8 +104,13 @@ def _make_run(pipeline_id: str, meta: PipelineMetadata, at: datetime, idx: int, 
     if anomaly in ("schema",) or (anomaly is None and idx > 0 and details.get("schema_changed")):
         schema = "v2"
         details["schema_change"] = {"added": ["loyalty_tier"], "removed": [], "type_changed": []}
+    dq = _dq_for_run(meta, records, rng, anomaly) if status == "succeeded" else None
+    if dq:
+        details["dq"] = dq
+        failed_records = dq["quarantined"] + dq["dropped"]
+        quality = dq["score"]
     bronze = records
-    silver = int(records * (1 - failed_records / max(records, 1)) * 0.985)
+    silver = dq["loaded"] if dq else int(records * (1 - failed_records / max(records, 1)) * 0.985)
     gold = max(int(silver * 0.12), 1)
     details["layers"] = {"source": records, "bronze": bronze, "silver": silver if status == "succeeded" else 0, "gold": gold if status == "succeeded" else 0}
     details["anomaly_injected"] = anomaly
@@ -189,6 +225,19 @@ def detect_anomalies(meta: PipelineMetadata, runs: list[PipelineRun], paused: bo
             add("quality", "warning", f"Data quality degraded to {latest.quality_score:.1f}% (normally {medq:.1f}%).",
                 f"{latest.failed_records:,} records failed quality rules in the latest run.",
                 "Open Data Quality to see which rules failed; the failing records are quarantined, not lost.", "quality", latest.quality_score - medq)
+        # rule-level: a rule that is normally Green/Amber turned Red in the latest run
+        latest_dq = latest.details.get("dq") or {}
+        for rr in latest_dq.get("rules", []):
+            past = [x["failed"] for h in history for x in (h.details.get("dq") or {}).get("rules", []) if x["rule_id"] == rr["rule_id"]]
+            if rr["rag"] == "red" and len(past) >= 5:
+                zr, medr = _robust_z(rr["failed"], past)
+                if zr > 3 and rr["failed"] > medr * 1.5:
+                    where = {"quarantine": f"parked in {meta.lakehouse.catalog}.{meta.quality.dq_schema} quarantine",
+                             "flag": "loaded with DQ flags", "drop": "dropped", "fail": "blocking the run"}[rr["action"]]
+                    add("quality", "warning", f"DQ rule “{rr['name']}” failed for {rr['failed']:,} records (normally ~{medr:,.0f}).",
+                        f"Pass rate {rr['pass_rate']}% in {rr['dataset']} — records were {where}.",
+                        "Open the rule's failing records on the Data Quality tab and fix them at the source.", "dq_issues",
+                        (rr["failed"] - medr) / medr * 100 if medr else None)
         zd, medd = _robust_z(latest.duration_seconds, [r.duration_seconds for r in history])
         if zd > 3.5 and latest.duration_seconds > medd * 1.6:
             add("performance", "warning", f"Processing took {latest.duration_seconds / medd:.1f}× longer than usual.",
@@ -246,4 +295,8 @@ def summary(meta: PipelineMetadata, row: Pipeline, runs: list[PipelineRun]) -> d
         "success_rate": round(len([r for r in runs[-50:] if r.status == "succeeded"]) / len(runs[-50:]) * 100, 1),
         "layers": latest.details.get("layers", {}),
         "run_count": len(runs),
+        "dq": (last_ok.details.get("dq") if last_ok else None),
+        "dq_issues_24h": sum((r.details.get("dq") or {}).get("issues", 0) for r in day),
+        "quarantined_24h": sum((r.details.get("dq") or {}).get("quarantined", 0) for r in day),
+        "dq_schema": meta.quality.dq_schema,
     }

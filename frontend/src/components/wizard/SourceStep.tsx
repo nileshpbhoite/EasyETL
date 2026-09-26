@@ -11,21 +11,22 @@ import { uploadFile, type FileAsset } from "@/components/source/upload";
 import { AIBadge, Badge, Button, Checkbox, Dialog, Input, Progress, Skeleton } from "@/components/ui";
 import { api } from "@/lib/api";
 import { showError, useApi } from "@/lib/hooks";
-import type { ConnectorSpec, DatasetRef, Pipeline } from "@/lib/types";
+import type { ConnectorSpec, DatasetRef, Pipeline, SavedConnection } from "@/lib/types";
 import { cn, fmtBytes, fmtNumber, timeAgo } from "@/lib/utils";
 import type { StepProps } from "@/app/(app)/pipelines/[id]/page";
 import { ConnectorIcon, LineTabs, NextButton, SectionCard, WizardFooter } from "./common";
 
-type Tab = "all" | "file" | "application" | "database" | "cloud_storage" | "api";
+type Tab = "all" | "file" | "application" | "warehouse" | "database" | "cloud_storage" | "streaming" | "nosql" | "api";
 const TABS: { value: Tab; label: string }[] = [
   { value: "all", label: "All" }, { value: "file", label: "Files" }, { value: "application", label: "Applications" },
-  { value: "database", label: "Databases" }, { value: "cloud_storage", label: "Cloud Storage" }, { value: "api", label: "APIs" },
+  { value: "warehouse", label: "Warehouses" }, { value: "database", label: "Databases" }, { value: "cloud_storage", label: "Cloud Storage" },
+  { value: "streaming", label: "Streaming" }, { value: "nosql", label: "NoSQL" }, { value: "api", label: "APIs" },
 ];
 const FILE_TYPES = [
   { label: "Excel", fmt: "xlsx", accept: ".xlsx,.xlsm,.xls" }, { label: "CSV", fmt: "csv", accept: ".csv,.tsv" }, { label: "JSON", fmt: "json", accept: ".json,.jsonl,.ndjson" },
   { label: "XML", fmt: "xml", accept: ".xml" }, { label: "Parquet", fmt: "parquet", accept: ".parquet" }, { label: "TXT", fmt: "txt", accept: ".txt" }, { label: "ZIP", fmt: "zip", accept: ".zip,.gz" },
 ];
-const FEATURED = ["salesforce", "sap", "oracle", "sqlserver", "snowflake", "servicenow", "workday", "mysql", "postgresql"];
+const FEATURED = ["salesforce", "sap", "dynamics365", "oracle", "sqlserver", "snowflake", "databricks", "kafka", "mongodb"];
 
 function ConnectorTile({ c, active, onClick }: { c: ConnectorSpec; active?: boolean; onClick: () => void }) {
   return (
@@ -33,6 +34,26 @@ function ConnectorTile({ c, active, onClick }: { c: ConnectorSpec; active?: bool
       <ConnectorIcon icon={c.icon} color={c.color} size="sm" className="size-8 rounded-lg" />
       <span className="text-[12.5px] font-medium leading-tight text-slate-800">{c.name}</span>
     </button>
+  );
+}
+
+/** Saved connections for this connector that can be used as a source. */
+function SavedPicker({ connector, onUse, busy }: { connector: string; onUse: (id: string) => void; busy: boolean }) {
+  const { data } = useApi<SavedConnection[]>("/api/connections?usage=source");
+  const mine = (data ?? []).filter((c) => c.connector === connector);
+  if (!mine.length) return null;
+  return (
+    <div className="mb-5 rounded-2xl bg-brand-50/60 p-3 ring-1 ring-brand-100">
+      <div className="mb-2 text-[12.5px] font-semibold text-brand-800">Use a saved connection</div>
+      <div className="flex flex-wrap gap-2">
+        {mine.map((c) => (
+          <Button key={c.id} size="sm" variant="secondary" onClick={() => onUse(c.id)} disabled={busy}>
+            <Plug /> {c.name} {c.usage === "both" && <Badge tone="ai">source & target</Badge>}
+          </Button>
+        ))}
+      </div>
+      <div className="mt-2 text-[11.5px] text-slate-500">…or set up a new connection below.</div>
+    </div>
   );
 }
 
@@ -233,7 +254,8 @@ export function SourceStep({ pipeline, mutate, busy, goTo }: StepProps) {
         <div className="space-y-5">
           {selected ? (
             <SectionCard title={`Connect to ${selected.name}`} subtitle="Friendly, no-code connection wizard">
-              <ConnectionForm key={selected.id} spec={selected} onConnect={connect} connecting={busy === "source"} />
+              <SavedPicker connector={selected.id} onUse={(id) => connect({ connector: selected.id, name: "", usage: "source", auth_method: null, config: {}, secrets: {}, connection_id: id })} busy={busy === "source"} />
+              <ConnectionForm key={selected.id} spec={selected} onConnect={connect} connecting={busy === "source"} allowedUsages={["source", "both"]} />
               {selected.demo_hint && (
                 <div className="mt-4 flex gap-2 rounded-lg bg-sky-50 px-3 py-2 text-xs text-sky-900">
                   <Plug className="size-4 shrink-0" /> No system handy? Use <code className="rounded bg-white px-1 font-mono">{selected.demo_hint}</code> to explore a realistic demo source.

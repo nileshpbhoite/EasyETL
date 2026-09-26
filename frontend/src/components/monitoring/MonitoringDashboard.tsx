@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, ArrowRight, CircleCheck, CircleX, Clock, Database, DollarSign, ExternalLink, Gauge, HardDrive, Pause, Play, RefreshCw, Sparkles, TriangleAlert, Zap } from "lucide-react";
+import { Activity, ArrowRight, CircleCheck, CircleX, Clock, Database, DollarSign, ExternalLink, Gauge, HardDrive, Pause, Play, RefreshCw, Sparkles, TriangleAlert, Zap, ArrowUpFromLine, ShieldAlert, Flag } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -11,7 +11,8 @@ import { FileTypeIcon } from "@/components/source/FileTypeIcon";
 import { LineTabs, SectionCard } from "@/components/wizard/common";
 import { api } from "@/lib/api";
 import { showError, useApi } from "@/lib/hooks";
-import type { Alert, DeploymentState, PipelineSummary, Run } from "@/lib/types";
+import type { Alert, DeploymentState, PipelineSummary, Run, RunDq } from "@/lib/types";
+import { RagPill } from "@/components/quality/QualityPanel";
 import { cn, fmtCompact, fmtDuration, fmtMinutes, fmtMoney, fmtNumber, timeAgo } from "@/lib/utils";
 
 interface Monitoring {
@@ -31,7 +32,12 @@ interface Monitoring {
     success_rate?: number;
     layers?: Record<string, number>;
     run_count?: number;
+    dq?: RunDq | null;
+    dq_issues_24h?: number;
+    quarantined_24h?: number;
   };
+  targets?: { name: string; connector: string; mode: string }[];
+  quality?: { dq_schema: string; catalog: string; default_action: string };
   runs: Run[];
   alerts: Alert[];
   deployment: DeploymentState;
@@ -92,7 +98,7 @@ function SparkTile({ title, value, sub, data, dataKey, color, fmt }: { title: st
   );
 }
 
-function PipelineFlow({ layers, status, engine, format }: { layers: Record<string, number>; status: string; engine: string; format: string }) {
+function PipelineFlow({ layers, status, engine, format, dq, targets }: { layers: Record<string, number>; status: string; engine: string; format: string; dq?: RunDq | null; targets?: { name: string }[] }) {
   const failed = status === "failed";
   const nodes: { key: string; label: string; icon: React.ReactNode; count?: number }[] = [
     { key: "source", label: "Source", icon: <FileTypeIcon format={format} size={34} />, count: layers.source },
@@ -113,11 +119,27 @@ function PipelineFlow({ layers, status, engine, format }: { layers: Record<strin
                 {n.label} {bad ? <CircleX className="size-3.5 text-rose-500" /> : <CircleCheck className="size-3.5 text-emerald-500" />}
               </div>
               <div className="text-[11px] text-slate-500">{bad ? "skipped" : n.count != null ? `${fmtCompact(n.count)} records` : "healthy"}</div>
+              {n.key === "silver" && dq && !bad && (dq.quarantined > 0 || dq.flagged > 0) && (
+                <div className="mt-1 flex flex-col items-center gap-0.5 text-[10.5px]">
+                  {dq.quarantined > 0 && <span className="rounded-full bg-ai-50 px-2 py-0.5 font-semibold text-ai-700 ring-1 ring-ai-100">{fmtCompact(dq.quarantined)} quarantined</span>}
+                  {dq.flagged > 0 && <span className="rounded-full bg-amber-50 px-2 py-0.5 font-semibold text-amber-700 ring-1 ring-amber-100">{fmtCompact(dq.flagged)} flagged</span>}
+                </div>
+              )}
             </div>
             {i < nodes.length - 1 && <ArrowRight className="size-4 text-slate-300" />}
           </div>
         );
       })}
+      {(targets ?? []).length > 0 && !failed && (
+        <div className="flex items-center gap-2">
+          <ArrowRight className="size-4 text-slate-300" />
+          <div className="flex min-w-[120px] flex-col items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-3">
+            <div className="grid size-10 place-items-center rounded-xl bg-ai-50 text-ai-600"><ArrowUpFromLine className="size-5" /></div>
+            <div className="text-[13px] font-semibold text-slate-800">{targets!.length} target{targets!.length > 1 ? "s" : ""}</div>
+            <div className="max-w-[140px] truncate text-[11px] text-slate-500" title={targets!.map((t) => t.name).join(", ")}>{targets!.map((t) => t.name).join(", ")}</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -171,6 +193,9 @@ export function MonitoringDashboard({ pipelineId, embedded }: { pipelineId: stri
     duration: Math.round(r.duration_seconds),
     rpm: r.duration_seconds > 0 ? Math.round((r.records_ingested / r.duration_seconds) * 60) : 0,
     cost: r.cost_usd,
+    issues: r.details.dq?.issues ?? 0,
+    quarantined: r.details.dq?.quarantined ?? 0,
+    flagged: r.details.dq?.flagged ?? 0,
   }));
   const recent = series.slice(-24);
   const engine = { auto_loader: "Auto Loader", lakeflow_connect: "Lakeflow Connect", rest_api: "API ingestion", jdbc: "JDBC", batch: "Batch", streaming: "Streaming" }[data.pipeline.ingestion_engine ?? ""] ?? "Ingestion";
@@ -231,16 +256,18 @@ export function MonitoringDashboard({ pipelineId, embedded }: { pipelineId: stri
 
       {tab === "overview" && (
         <div className="space-y-5">
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
             <StatusTile label="Status" value={<span className="inline-flex items-center gap-1.5"><span className={cn("size-2 rounded-full", failed ? "bg-rose-500" : paused ? "bg-amber-500" : "bg-emerald-500")} />{failed ? "Failed" : paused ? "Paused" : "Active"}</span>} tone={failed ? "red" : paused ? "amber" : "green"} />
             <StatusTile label="Last Run" value={when(s.last_run.started_at)} sub={`${fmtDuration(s.last_run.duration_seconds)} · ${s.last_run.status}`} />
             <StatusTile label="Next Run" value={paused ? "Paused" : when(s.next_run)} sub={data.pipeline.frequency} />
             <StatusTile label="Records Ingested" value={fmtNumber(s.records_last_run)} sub={`${fmtCompact(s.records_24h)} in last 24h`} />
+            <StatusTile label="DQ Issues (last run)" value={s.dq ? fmtNumber(s.dq.issues) : "—"} tone={s.dq?.rag.red ? "red" : s.dq?.rag.amber ? "amber" : "green"}
+              sub={s.dq ? `${s.dq.rag.red} red · ${s.dq.rag.amber} amber · ${fmtCompact(s.dq.quarantined)} quarantined` : "no rules yet"} />
           </div>
 
           <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4">
             <div className="mb-3 flex items-center justify-between"><div className="text-sm font-semibold text-slate-800">Pipeline Flow</div><span className="text-xs text-slate-500">Latest run · {new Date(s.last_run.started_at).toLocaleString()}</span></div>
-            <PipelineFlow layers={s.layers ?? {}} status={s.last_run.status} engine={engine} format={sourceFormat(data.pipeline)} />
+            <PipelineFlow layers={s.layers ?? {}} status={s.last_run.status} engine={engine} format={sourceFormat(data.pipeline)} dq={s.last_run.details.dq} targets={data.targets} />
           </div>
 
           <div className="grid gap-3 md:grid-cols-3">
@@ -266,14 +293,15 @@ export function MonitoringDashboard({ pipelineId, embedded }: { pipelineId: stri
       {tab === "runs" && (
         <div className="max-h-[560px] overflow-y-auto rounded-xl border border-slate-200 scrollbar-thin">
           <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-slate-50"><tr className="border-b border-slate-200 text-left text-xs text-slate-500"><th className="px-4 py-2 font-medium">Started</th><th className="px-3 py-2 font-medium">Status</th><th className="px-3 py-2 text-right font-medium">Records</th><th className="px-3 py-2 text-right font-medium">Failed</th><th className="px-3 py-2 text-right font-medium">Duration</th><th className="px-3 py-2 text-right font-medium">Quality</th><th className="px-4 py-2 text-right font-medium">Cost</th></tr></thead>
+            <thead className="sticky top-0 bg-slate-50"><tr className="border-b border-slate-200 text-left text-xs text-slate-500"><th className="px-4 py-2 font-medium">Started</th><th className="px-3 py-2 font-medium">Status</th><th className="px-3 py-2 text-right font-medium">Records</th><th className="px-3 py-2 text-right font-medium">DQ issues</th><th className="px-3 py-2 text-right font-medium">Quarantined</th><th className="px-3 py-2 text-right font-medium">Duration</th><th className="px-3 py-2 text-right font-medium">Quality</th><th className="px-4 py-2 text-right font-medium">Cost</th></tr></thead>
             <tbody>
               {[...data.runs].reverse().slice(0, 100).map((r) => (
                 <tr key={r.id} className="border-b border-slate-100">
                   <td className="px-4 py-2 text-slate-600">{new Date(r.started_at).toLocaleString()}</td>
                   <td className="px-3 py-2"><StatusBadge status={r.status} />{r.details.error && <span className="ml-2 text-xs text-rose-600">{r.details.error.title}</span>}{r.details.schema_change && <Badge tone="sky" className="ml-2">schema change</Badge>}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{fmtNumber(r.records_ingested)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-slate-500">{fmtNumber(r.failed_records)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{r.details.dq ? <span className={cn(r.details.dq.rag.red ? "text-rose-600" : "text-slate-700")}>{fmtNumber(r.details.dq.issues)}</span> : "—"}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-slate-500">{fmtNumber(r.details.dq?.quarantined ?? r.failed_records)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{fmtDuration(r.duration_seconds)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{r.quality_score}%</td>
                   <td className="px-4 py-2 text-right tabular-nums text-slate-500">{fmtMoney(r.cost_usd, 3)}</td>
@@ -328,25 +356,68 @@ export function MonitoringDashboard({ pipelineId, embedded }: { pipelineId: stri
 
       {tab === "quality" && (
         <div className="space-y-5">
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <Stat label="Data quality" value={s.quality_score ? `${s.quality_score}%` : "—"} sub="rules pass rate" icon={<Gauge />} tone="green" />
-            <Stat label="Failed records" value={fmtNumber(s.failed_records)} sub="quarantined" icon={<TriangleAlert />} tone={s.failed_records ? "red" : "slate"} />
-            <Stat label="Data freshness" value={fmtMinutes(s.freshness_minutes)} sub="since last load" icon={<Activity />} tone="amber" />
-            <Stat label="Processing time" value={fmtDuration(s.processing_seconds)} sub="last run" icon={<Clock />} tone="sky" />
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+            <Stat label="DQ score (last run)" value={s.dq ? `${s.dq.score}%` : s.quality_score ? `${s.quality_score}%` : "—"} sub="severity-weighted pass rate" icon={<Gauge />} tone="green" />
+            <Stat label="DQ issues" value={fmtNumber(s.dq?.issues ?? 0)} sub={`${fmtCompact(s.dq_issues_24h ?? 0)} in the last 24h`} icon={<TriangleAlert />} tone={s.dq?.rag.red ? "red" : "amber"} />
+            <Stat label="Quarantined" value={fmtNumber(s.dq?.quarantined ?? 0)} sub={data.quality ? `${data.quality.catalog}.${data.quality.dq_schema}.*_quarantine` : "parked for review"} icon={<ShieldAlert />} tone="ai" />
+            <Stat label="Loaded with flags" value={fmtNumber(s.dq?.flagged ?? 0)} sub="_dq_issues / _dq_status set" icon={<Flag />} tone="amber" />
+            <Stat label="Dropped" value={fmtNumber(s.dq?.dropped ?? 0)} sub="discarded by rules" icon={<CircleX />} tone="slate" />
           </div>
-          <div className="rounded-xl border border-slate-200 p-4">
-            <div className="text-sm font-semibold">Data quality</div>
-            <div className="text-xs text-slate-500">% of records passing all rules</div>
-            <div className="mt-3 h-60">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={series} margin={{ top: 5, right: 5, left: -18, bottom: 0 }}>
-                  <CartesianGrid vertical={false} stroke="#eef0f5" />
-                  <XAxis dataKey="t" tick={tick} tickLine={false} axisLine={false} minTickGap={50} />
-                  <YAxis tick={tick} tickLine={false} axisLine={false} domain={["dataMin - 3", 100]} tickFormatter={(v) => `${Math.round(v)}`} />
-                  <Tooltip contentStyle={tooltipStyle} formatter={(v) => [`${v}%`, "Quality"]} />
-                  <Line type="monotone" dataKey="quality" stroke="#10b981" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
-                </LineChart>
-              </ResponsiveContainer>
+          {s.dq && (
+            <div className="rounded-xl border border-slate-200 bg-white">
+              <div className="flex items-center justify-between px-4 pt-4">
+                <div><div className="text-sm font-semibold">Rules in the latest run</div><div className="text-xs text-slate-500">{new Date(s.last_run.started_at).toLocaleString()} · {fmtNumber(s.last_run.records_ingested)} records</div></div>
+                <div className="flex gap-2">{(["green", "amber", "red"] as const).map((k) => <RagPill key={k} rag={k} className="!normal-case" />)}</div>
+              </div>
+              <table className="mt-2 w-full text-sm">
+                <thead className="text-left text-xs text-slate-500"><tr className="border-b border-slate-100"><th className="px-4 py-2 font-medium">Rule</th><th className="px-3 py-2 font-medium">Dataset</th><th className="px-3 py-2 font-medium">On failure</th><th className="px-3 py-2 text-right font-medium">Failed records</th><th className="px-3 py-2 text-right font-medium">Pass rate</th><th className="px-4 py-2 font-medium">RAG</th></tr></thead>
+                <tbody>
+                  {[...s.dq.rules].sort((x, y) => y.failed - x.failed).map((r) => (
+                    <tr key={r.rule_id} className="border-b border-slate-50">
+                      <td className="px-4 py-2 font-medium text-slate-800">{r.name}</td>
+                      <td className="px-3 py-2 text-slate-500">{r.dataset.split(" › ").pop()}</td>
+                      <td className="px-3 py-2 text-slate-600">{{ flag: "Flag & load", quarantine: "Quarantine", drop: "Drop", fail: "Fail run" }[r.action]}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{fmtNumber(r.failed)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{r.pass_rate}%</td>
+                      <td className="px-4 py-2"><RagPill rag={r.rag} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="grid gap-5 xl:grid-cols-2">
+            <div className="rounded-xl border border-slate-200 p-4">
+              <div className="text-sm font-semibold">DQ issues per run</div>
+              <div className="text-xs text-slate-500">Quarantined and flagged records</div>
+              <div className="mt-3 h-56">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={series} margin={{ top: 5, right: 5, left: -12, bottom: 0 }}>
+                    <CartesianGrid vertical={false} stroke="#eef0f5" />
+                    <XAxis dataKey="t" tick={tick} tickLine={false} axisLine={false} minTickGap={50} />
+                    <YAxis tick={tick} tickLine={false} axisLine={false} tickFormatter={(v) => fmtCompact(v)} />
+                    <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "#eff4ff" }} formatter={(v, n) => [fmtNumber(Number(v)), n === "quarantined" ? "Quarantined" : "Flagged"]} />
+                    <Bar dataKey="quarantined" stackId="dq" fill="#8b5cf6" />
+                    <Bar dataKey="flagged" stackId="dq" fill="#f59e0b" radius={[3, 3, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="mt-1 flex justify-center gap-4 text-xs text-slate-500"><span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-ai-500" />Quarantined</span><span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-amber-500" />Flagged</span></div>
+            </div>
+            <div className="rounded-xl border border-slate-200 p-4">
+              <div className="text-sm font-semibold">Data quality score</div>
+              <div className="text-xs text-slate-500">Severity-weighted rule pass rate per run</div>
+              <div className="mt-3 h-56">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={series} margin={{ top: 5, right: 5, left: -18, bottom: 0 }}>
+                    <CartesianGrid vertical={false} stroke="#eef0f5" />
+                    <XAxis dataKey="t" tick={tick} tickLine={false} axisLine={false} minTickGap={50} />
+                    <YAxis tick={tick} tickLine={false} axisLine={false} domain={["dataMin - 3", 100]} tickFormatter={(v) => `${Math.round(v)}`} />
+                    <Tooltip contentStyle={tooltipStyle} formatter={(v) => [`${v}%`, "DQ score"]} />
+                    <Line type="monotone" dataKey="quality" stroke="#10b981" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           </div>
         </div>

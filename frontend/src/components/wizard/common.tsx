@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, Check, CircleHelp, Boxes, Cloud, Database, FileUp, Globe, HardDrive, LifeBuoy, Megaphone, Server, Share2, Snowflake, Users } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ChartColumn, CircleHelp, Boxes, Building2, Cloud, CreditCard, Database, FileUp, Globe, HardDrive, Layers, Leaf, LifeBuoy, List, Megaphone, Radio, Search, Server, Share2, ShoppingCart, Snowflake, Ticket, Users, Warehouse } from "lucide-react";
 import { createContext, useContext, type ReactNode } from "react";
 import { Button, Tooltip } from "@/components/ui";
 import { cn } from "@/lib/utils";
@@ -137,6 +137,8 @@ export function NextButton({ children, ...props }: React.ComponentProps<typeof B
 const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   upload: FileUp, cloud: Cloud, boxes: Boxes, "life-buoy": LifeBuoy, users: Users, snowflake: Snowflake, megaphone: Megaphone,
   server: Server, database: Database, "hard-drive": HardDrive, globe: Globe, share2: Share2,
+  layers: Layers, warehouse: Warehouse, radio: Radio, leaf: Leaf, search: Search, building: Building2, ticket: Ticket,
+  "shopping-cart": ShoppingCart, "credit-card": CreditCard, "bar-chart": ChartColumn, list: List,
 };
 
 export function ConnectorIcon({ icon, color, size = "md", className }: { icon: string; color: string; size?: "sm" | "md" | "lg"; className?: string }) {

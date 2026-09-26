@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, File, Form, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
@@ -154,6 +155,7 @@ class SourceIn(BaseModel):
     config: dict[str, Any] = Field(default_factory=dict)
     secrets: dict[str, Any] = Field(default_factory=dict)
     file_ids: list[str] = Field(default_factory=list)
+    usage: str = "source"
 
 
 @router.post("/{pipeline_id}/source")
@@ -170,11 +172,15 @@ def set_source(pipeline_id: str, body: SourceIn, db: DB, user: Editor):
         conn = db.get(Connection, body.connection_id)
         if not conn or conn.tenant_id != user.tenant_id:
             raise FriendlyError("Connection not found", "Choose another saved connection.", status_code=404)
+        if (conn.usage or "source") == "target":
+            raise FriendlyError("Target-only connection", f"'{conn.name}' is set up as a target. Change it to Source or Both on the Sources page.")
         config, connection_id = dict(conn.config), conn.id
     else:
         config, secrets = split_secrets(body.connector, {**body.config, "auth_method": body.auth_method}, body.secrets)
         ref = SecretStore(db, user.tenant_id).put(secrets)
-        conn = Connection(tenant_id=user.tenant_id, name=body.name or f"{spec.name} ({meta.name})", connector=body.connector, config=config, secret_ref=ref)
+        usage = body.usage if body.usage in ("source", "both") and "target" in spec.roles else "source"
+        conn = Connection(tenant_id=user.tenant_id, name=body.name or f"{spec.name} ({meta.name})", connector=body.connector, config=config,
+                          secret_ref=ref, usage=usage)
         db.add(conn)
         db.flush()
         connection_id = conn.id
@@ -404,6 +410,35 @@ def preview(pipeline_id: str, body: PreviewIn, db: DB, user: User):
 
 
 # ------------------------------------------------------------------ data quality
+def _dq_context(meta, rt, dataset_id: str) -> tuple[list[str], dict[str, str], dict[str, list]]:
+    """Post-transformation columns, their semantic types (from the profile, following renames) and a few sample values."""
+    cols = rt.columns_after(dataset_id)
+    prof = meta.analysis.profiles.get(dataset_id, {})
+    types: dict[str, str] = {}
+    for c in prof.get("columns", []):
+        types[meta.resolve_column(dataset_id, c["name"]) or c["name"]] = c.get("semantic_type")
+    df = rt.transformed(dataset_id)
+    samples = {c: df[c].drop_nulls().head(5).cast(str).to_list() for c in cols if c in df.columns}
+    return cols, types, samples
+
+
+def _before_rules(meta, dataset_id: str, raw_columns: list[str]):
+    """Rules that can also be scored on the raw data (typed rules; SQL rules whose columns exist before transformations)."""
+    from ..engine.dq_sql import DQSqlError, validate
+
+    out = []
+    for r in meta.quality_rules:
+        if r.dataset_id != dataset_id:
+            continue
+        if r.rule == "expression":
+            try:
+                validate(r.params.get("sql", "TRUE"), raw_columns)
+            except DQSqlError:
+                continue
+        out.append(r)
+    return out
+
+
 @router.get("/{pipeline_id}/quality")
 def quality(pipeline_id: str, db: DB, user: User):
     _, meta, rt = _ctx(db, user, pipeline_id)
@@ -412,14 +447,52 @@ def quality(pipeline_id: str, db: DB, user: User):
         rules = [r for r in meta.quality_rules if r.dataset_id == d.id]
         raw = rt.raw(d.id)
         after = rt.transformed(d.id)
-        before_res = dq.evaluate(raw, rules, rt.transformed)
+        before_res = dq.evaluate(raw, _before_rules(meta, d.id, raw.columns), rt.transformed)
         after_rules = [r.model_copy(update={"column": meta.resolve_column(d.id, r.column)}) for r in rules]
         after_res = dq.evaluate(after, after_rules, rt.transformed)
         prof = meta.analysis.profiles.get(d.id, {})
         out.append({"dataset_id": d.id, "dataset": d.name, "profile_quality": prof.get("quality"), "before": before_res, "after": after_res,
+                    "columns": [c for c in after.columns if c != "__row_id"],
                     "anomalies": [{"column": c["name"], "outliers": c["outlier_count"], "bounds": c.get("outlier_bounds")}
                                   for c in prof.get("columns", []) if c.get("outlier_count")]})
-    return {"datasets": out, "catalog": dq.RULE_CATALOG}
+    return {"datasets": out, "catalog": dq.RULE_CATALOG, "config": meta.quality.model_dump(), "actions": dq.ACTIONS,
+            "rules": [r.model_dump() for r in meta.quality_rules]}
+
+
+class DraftIn(BaseModel):
+    dataset_id: str
+    text: str
+
+
+@router.post("/{pipeline_id}/quality-rules/draft")
+def draft_rule(pipeline_id: str, body: DraftIn, db: DB, user: User):
+    """Plain English (or SQL) → a validated rule with its SQL, PySpark code and a preview on the data. Nothing is saved."""
+    from ..ai import dq_rules
+    from ..engine.dq_sql import DQSqlError, pyspark_code
+
+    _, meta, rt = _ctx(db, user, pipeline_id)
+    if not meta.dataset(body.dataset_id):
+        raise FriendlyError("Dataset not found", "Pick one of the pipeline's datasets.", status_code=404)
+    cols, types, samples = _dq_context(meta, rt, body.dataset_id)
+    try:
+        d = dq_rules.convert(body.text, cols, types, samples)
+    except DQSqlError as e:
+        raise FriendlyError("Couldn't create the rule", str(e)) from e
+    rule = QualityRule(dataset_id=body.dataset_id, column=d.get("column"), rule=d["rule"], params=d.get("params") or {},  # type: ignore[arg-type]
+                       dimension=d.get("dimension") or "custom", description=d["name"], name=d["name"], origin="nl", source_text=body.text,
+                       on_fail=d.get("action") or meta.quality.default_action, severity=d.get("severity") or "medium")  # type: ignore[arg-type]
+    sql = dq.rule_sql(rule)
+    df = rt.transformed(body.dataset_id)
+    res = dq.evaluate(df, [rule], rt.transformed)["rules"][0]
+    used = d.get("columns") or ([rule.column] if rule.column else [])
+    failing = []
+    if res.get("failed"):
+        mask = df.select(dq.rule_mask(df, rule, rt.transformed).fill_null(True).alias("ok"))["ok"]
+        failing = frame_rows(df.filter(~mask).select([c for c in used if c in df.columns]).head(10))
+    return {"rule": rule.model_dump(), "sql": sql, "python": pyspark_code(sql or "TRUE", rule.name or "rule") if sql else None,
+            "explanation": d.get("explanation"), "engine": d.get("engine"),
+            "preview": {"records": res.get("records", df.height), "failed": res.get("failed", 0), "pass_rate": res.get("pass_rate"),
+                        "rag": res.get("rag"), "columns": used, "failing_rows": failing, "error": res.get("message")}}
 
 
 class RuleIn(BaseModel):
@@ -429,41 +502,71 @@ class RuleIn(BaseModel):
     dimension: str | None = None
     params: dict[str, Any] = Field(default_factory=dict)
     description: str | None = None
-    on_fail: str = "warn"
+    name: str | None = None
+    on_fail: str | None = None
+    severity: str = "medium"
+    threshold_green: float = 99.0
+    threshold_amber: float = 95.0
+    origin: str = "user"
+    source_text: str | None = None
     enabled: bool = True
+
+
+def _make_rule(body: RuleIn, meta, rt) -> QualityRule:
+    from ..ai.policy import validate_quality_rule
+
+    dim = body.dimension or next((c["dimension"] for c in dq.RULE_CATALOG if c["rule"] == body.rule), "custom")
+    label = next((c["label"] for c in dq.RULE_CATALOG if c["rule"] == body.rule), body.rule)
+    desc = body.description or body.name or (f"{body.column}: {label.lower()}" if body.column else label)
+    try:
+        rule = QualityRule(dataset_id=body.dataset_id, column=body.column, rule=body.rule, dimension=dim, params=body.params,  # type: ignore[arg-type]
+                           description=desc, name=body.name or desc, on_fail=body.on_fail or meta.quality.default_action,  # type: ignore[arg-type]
+                           enabled=body.enabled, severity=body.severity, threshold_green=body.threshold_green,  # type: ignore[arg-type]
+                           threshold_amber=body.threshold_amber, origin=body.origin, source_text=body.source_text)  # type: ignore[arg-type]
+    except ValueError as e:
+        raise FriendlyError("Check the rule", str(e).split("\n")[0]) from e
+    problems = validate_quality_rule(rule, meta, rt.columns_after(body.dataset_id))
+    if problems:
+        raise FriendlyError("Check the rule", " ".join(problems))
+    return rule
 
 
 @router.post("/{pipeline_id}/quality-rules")
 def add_rule(pipeline_id: str, body: RuleIn, db: DB, user: Editor):
     row, meta, rt = _ctx(db, user, pipeline_id)
-    from ..ai.policy import validate_quality_rule
-
-    dim = body.dimension or next((c["dimension"] for c in dq.RULE_CATALOG if c["rule"] == body.rule), "custom")
-    label = next((c["label"] for c in dq.RULE_CATALOG if c["rule"] == body.rule), body.rule)
-    rule = QualityRule(dataset_id=body.dataset_id, column=body.column, rule=body.rule, dimension=dim, params=body.params,  # type: ignore[arg-type]
-                       description=body.description or f"{body.column}: {label.lower()}", on_fail=body.on_fail, enabled=body.enabled)  # type: ignore[arg-type]
-    problems = validate_quality_rule(rule, meta, rt.columns_after(body.dataset_id))
-    if problems:
-        raise FriendlyError("Check the rule", " ".join(problems))
+    rule = _make_rule(body, meta, rt)
     meta.quality_rules.append(rule)
-    return _done(db, user, row, meta, f"Added quality rule: {rule.description}")
+    return _done(db, user, row, meta, f"Added quality rule: {rule.name}")
 
 
 class RulePatch(BaseModel):
     enabled: bool | None = None
     on_fail: str | None = None
     params: dict[str, Any] | None = None
+    name: str | None = None
+    severity: str | None = None
+    threshold_green: float | None = None
+    threshold_amber: float | None = None
 
 
 @router.patch("/{pipeline_id}/quality-rules/{rule_id}")
 def patch_rule(pipeline_id: str, rule_id: str, body: RulePatch, db: DB, user: Editor):
-    row, meta = service.load(db, user, pipeline_id)
+    from ..ai.policy import validate_quality_rule
+
+    row, meta, rt = _ctx(db, user, pipeline_id)
     rule = next((r for r in meta.quality_rules if r.id == rule_id), None)
     if not rule:
         raise FriendlyError("Rule not found", "It may have been removed.", status_code=404)
-    for k, v in body.model_dump(exclude_none=True).items():
-        setattr(rule, k, v)
-    return _done(db, user, row, meta, f"Updated quality rule: {rule.description}")
+    try:
+        updated = QualityRule(**{**rule.model_dump(), **body.model_dump(exclude_none=True)})
+    except ValueError as e:
+        raise FriendlyError("Check the rule", str(e).split("\n")[0]) from e
+    if body.params is not None or body.threshold_green is not None or body.threshold_amber is not None:
+        problems = validate_quality_rule(updated, meta, rt.columns_after(rule.dataset_id))
+        if problems:
+            raise FriendlyError("Check the rule", " ".join(problems))
+    meta.quality_rules = [updated if r.id == rule_id else r for r in meta.quality_rules]
+    return _done(db, user, row, meta, f"Updated quality rule: {updated.name or updated.description}")
 
 
 @router.delete("/{pipeline_id}/quality-rules/{rule_id}")
@@ -471,6 +574,160 @@ def delete_rule(pipeline_id: str, rule_id: str, db: DB, user: Editor):
     row, meta = service.load(db, user, pipeline_id)
     meta.quality_rules = [r for r in meta.quality_rules if r.id != rule_id]
     return _done(db, user, row, meta, "Removed a quality rule")
+
+
+@router.get("/{pipeline_id}/quality-rules/{rule_id}/failures")
+def rule_failures(pipeline_id: str, rule_id: str, db: DB, user: User, limit: int = 50):
+    """Records that fail a rule (after transformations) — what would be flagged or parked in quarantine."""
+    _, meta, rt = _ctx(db, user, pipeline_id)
+    rule = next((r for r in meta.quality_rules if r.id == rule_id), None)
+    if not rule:
+        raise FriendlyError("Rule not found", "It may have been removed.", status_code=404)
+    rule = rule.model_copy(update={"column": meta.resolve_column(rule.dataset_id, rule.column)})
+    df = rt.transformed(rule.dataset_id)
+    mask = df.select(dq.rule_mask(df, rule, rt.transformed).fill_null(True).alias("ok"))["ok"]
+    bad = df.filter(~mask)
+    cols = [c for c in bad.columns if c != "__row_id"]
+    return {"rule_id": rule.id, "name": rule.name or rule.description, "action": rule.action(), "total": bad.height,
+            "columns": cols, "highlight": [rule.column] if rule.column else [], "rows": frame_rows(bad.select(cols).head(min(limit, 500)))}
+
+
+@router.get("/{pipeline_id}/quality-rules/template")
+def rules_template(pipeline_id: str, db: DB, user: User):
+    from fastapi.responses import Response
+
+    from ..engine.dq_excel import build_template
+
+    row, meta, rt = _ctx(db, user, pipeline_id)
+    cols, types = {}, {}
+    for d in meta.selected_datasets():
+        if d.id in meta.analysis.profiles:
+            cols[d.id], types[d.id], _ = _dq_context(meta, rt, d.id)
+    name = re.sub(r"[^A-Za-z0-9]+", "_", row.name).strip("_") or "pipeline"
+    return Response(build_template(meta, cols, types), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="{name}_dq_rules.xlsx"'})
+
+
+@router.post("/{pipeline_id}/quality-rules/import")
+async def import_rules(pipeline_id: str, db: DB, user: Editor, file: UploadFile = File(...), dry_run: bool = Form(True)):
+    """Excel/CSV rules → preview (dry_run) or add. Every row is validated exactly like a rule added in the UI."""
+    from ..engine.dq_excel import parse_rules
+
+    row, meta, rt = _ctx(db, user, pipeline_id)
+    content = await file.read()
+    if len(content) > 5_000_000:
+        raise FriendlyError("File too large", "Rule files are limited to 5 MB.")
+    cols, types = {}, {}
+    for d in meta.selected_datasets():
+        if d.id in meta.analysis.profiles:
+            cols[d.id], types[d.id], _ = _dq_context(meta, rt, d.id)
+    try:
+        parsed = parse_rules(file.filename or "rules.xlsx", content, meta, cols, types)
+    except (ValueError, KeyError, StopIteration) as e:
+        raise FriendlyError("Couldn't read the file", str(e) or "Use the EasyETL rules template (.xlsx or .csv).") from e
+    except Exception as e:  # noqa: BLE001 — corrupt workbook etc.
+        raise FriendlyError("Couldn't read the file", "It doesn't look like an Excel or CSV file.") from e
+    added = []
+    for item in parsed:
+        if not item["ok"]:
+            continue
+        try:
+            rule = _make_rule(RuleIn(**item["rule"]), meta, rt)
+        except FriendlyError as e:
+            item.update(ok=False, error=e.message)
+            continue
+        res = dq.evaluate(rt.transformed(rule.dataset_id), [rule.model_copy(update={"column": meta.resolve_column(rule.dataset_id, rule.column)})], rt.transformed)["rules"][0]
+        item["preview"] = {"pass_rate": res.get("pass_rate"), "failed": res.get("failed"), "rag": res.get("rag")}
+        added.append(rule)
+    summary = {"rows": parsed, "valid": sum(1 for p in parsed if p["ok"]), "invalid": sum(1 for p in parsed if not p["ok"])}
+    if dry_run or not added:
+        return {"dry_run": True, **summary}
+    meta.quality_rules.extend(added)
+    return {**_done(db, user, row, meta, f"Imported {len(added)} quality rules from {file.filename}"), "dry_run": False, **summary}
+
+
+class QualityConfigIn(BaseModel):
+    default_action: str | None = None
+    add_dq_columns: bool | None = None
+    fail_run_below: float | None = None
+    clear_fail_threshold: bool = False
+    dq_schema: str | None = None
+    apply_to_all: bool = False
+
+
+@router.put("/{pipeline_id}/quality-config")
+def put_quality_config(pipeline_id: str, body: QualityConfigIn, db: DB, user: Editor):
+    from ..engine.metadata import QualityConfig
+
+    row, meta = service.load(db, user, pipeline_id)
+    data = meta.quality.model_dump()
+    for k in ("default_action", "add_dq_columns", "fail_run_below", "dq_schema"):
+        v = getattr(body, k)
+        if v is not None:
+            data[k] = v
+    if body.clear_fail_threshold:
+        data["fail_run_below"] = None
+    if data["dq_schema"] and not re.fullmatch(r"[a-z_][a-z0-9_]{0,120}", data["dq_schema"]):
+        raise FriendlyError("Invalid schema name", "Use lowercase letters, numbers and underscores.")
+    if data["fail_run_below"] is not None and not 0 <= float(data["fail_run_below"]) <= 100:
+        raise FriendlyError("Invalid threshold", "Use a score between 0 and 100.")
+    try:
+        meta.quality = QualityConfig(**data)
+    except ValueError as e:
+        raise FriendlyError("Check the settings", str(e).split("\n")[0]) from e
+    if body.apply_to_all:
+        for r in meta.quality_rules:
+            if r.action() in ("flag", "quarantine"):
+                r.on_fail = meta.quality.default_action  # type: ignore[assignment]
+    return _done(db, user, row, meta, "Updated data quality settings")
+
+
+# ------------------------------------------------------------------ publish targets
+class TargetIn(BaseModel):
+    id: str | None = None
+    connection_id: str
+    tables: list[str] = Field(default_factory=list)
+    mode: str = "overwrite"
+    merge_keys: list[str] = Field(default_factory=list)
+    destination: str = ""
+    file_format: str = "parquet"
+    include_flagged: bool = True
+    enabled: bool = True
+
+
+@router.get("/{pipeline_id}/targets")
+def get_targets(pipeline_id: str, db: DB, user: User):
+    _, meta = service.load(db, user, pipeline_id)
+    return {"targets": [t.model_dump() for t in meta.targets],
+            "tables": [{"name": t.name, "layer": t.layer} for t in meta.lakehouse.tables if t.enabled and t.layer in ("silver", "gold")]}
+
+
+@router.put("/{pipeline_id}/targets")
+def put_targets(pipeline_id: str, body: list[TargetIn], db: DB, user: Editor):
+    from ..engine.metadata import TargetConfig
+
+    row, meta = service.load(db, user, pipeline_id)
+    tables = {t.name for t in meta.lakehouse.tables if t.enabled}
+    out = []
+    for t in body:
+        conn = db.get(Connection, t.connection_id)
+        if not conn or conn.tenant_id != user.tenant_id:
+            raise FriendlyError("Connection not found", "Pick one of your saved connections.", status_code=404)
+        spec = get_connector_class(conn.connector).spec
+        if (conn.usage or "source") == "source":
+            raise FriendlyError("Not a target connection", f"'{conn.name}' is set up as a source. Change it to Target or Both on the Sources page.")
+        if t.mode not in spec.target_modes:
+            raise FriendlyError("Write mode not supported", f"{spec.name} supports: {', '.join(spec.target_modes)}.")
+        if t.mode == "merge" and not t.merge_keys:
+            raise FriendlyError("Choose key columns", "Merge (upsert) needs the column(s) that identify a record.")
+        unknown = [n for n in t.tables if n not in tables]
+        if unknown:
+            raise FriendlyError("Unknown table", f"{', '.join(unknown)} isn't part of this pipeline's Lakehouse design.")
+        if not re.fullmatch(r"[\w.\-/ $]{0,200}", t.destination or ""):
+            raise FriendlyError("Invalid destination", "Use letters, numbers, dots, dashes, underscores or slashes.")
+        out.append(TargetConfig(**{**t.model_dump(exclude_none=True), "connector": conn.connector, "name": conn.name}))  # type: ignore[arg-type]
+    meta.targets = out
+    return _done(db, user, row, meta, f"Updated publish targets ({len(out)})")
 
 
 # ------------------------------------------------------------------ configure / design / governance
@@ -558,7 +815,24 @@ def spec(pipeline_id: str, db: DB, user: User):
 @router.get("/{pipeline_id}/bundle")
 def bundle(pipeline_id: str, db: DB, user: Deployer):
     row, meta = service.load(db, user, pipeline_id)
-    return {"files": build_bundle(meta, row.environment)}
+    configs, _ = target_connections(db, user.tenant_id, meta)
+    return {"files": build_bundle(meta, row.environment, configs)}
+
+
+def target_connections(db, tenant_id: str, meta) -> tuple[dict[str, dict], dict[str, str]]:
+    """Non-secret config of every target connection (goes into the bundle) and its secrets (go to the Databricks secret scope)."""
+    configs: dict[str, dict] = {}
+    secrets: dict[str, str] = {}
+    store = SecretStore(db, tenant_id)
+    for t in meta.targets:
+        conn = db.get(Connection, t.connection_id)
+        if not conn or conn.tenant_id != tenant_id:
+            continue
+        configs[conn.id] = {**(conn.config or {}), "auth_method": (conn.config or {}).get("auth_method")}
+        for k, v in (store.get(conn.secret_ref) or {}).items():
+            if v:
+                secrets[f"{conn.id}-{k}"] = str(v)
+    return configs, secrets
 
 
 class DeployIn(BaseModel):
@@ -573,8 +847,14 @@ def deploy(pipeline_id: str, body: DeployIn, db: DB, user: Deployer):
         meta.health_check = service.run_health_check(rt)
         service.save(db, user, row, meta, "Deployment blocked by readiness check")
         raise FriendlyError("Not ready to deploy", "The readiness check found problems. Fix them on the Review step (many can be fixed automatically).", status_code=409)
-    state = get_deployer().deploy(row.id, meta, body.environment)
+    try:
+        deployer = get_deployer(db, user.tenant_id)
+    except Exception as e:  # noqa: BLE001 — e.g. the service principal token request failed
+        raise FriendlyError("Couldn't sign in to Databricks", str(e)) from e
+    deployer.connections, deployer.secret_values = target_connections(db, user.tenant_id, meta)
+    state = deployer.deploy(row.id, meta, body.environment)
     state.deployed_version = row.version + 1
+    state.dq_baseline = service.dq_baseline(rt)
     meta.deployment = state
     row.environment = body.environment
     if state.status == "deployed":
@@ -597,7 +877,9 @@ def monitor(pipeline_id: str, db: DB, user: User):
     runs = monitoring.runs_for(db, row.id)
     return {"summary": monitoring.summary(meta, row, runs), "runs": [monitoring.run_dict(r) for r in runs[-120:]],
             "alerts": monitoring.detect_anomalies(meta, runs, paused=row.status == "paused"), "deployment": meta.deployment.model_dump(mode="json"),
-            "pipeline": pipeline_out(row, meta, full=False)}
+            "pipeline": pipeline_out(row, meta, full=False),
+            "targets": [{"name": t.name, "connector": t.connector, "mode": t.mode} for t in meta.targets if t.enabled],
+            "quality": {**meta.quality.model_dump(), "catalog": meta.lakehouse.catalog}}
 
 
 @router.post("/{pipeline_id}/pause")
