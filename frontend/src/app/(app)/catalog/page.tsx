@@ -1,5 +1,7 @@
 "use client";
 
+import { FlowArt } from "@/components/art";
+
 import { ChevronRight, Database, GitBranch, KeyRound, Library, Lock, Search, Table2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
@@ -36,9 +38,10 @@ function CatalogInner() {
   }, [table?.pipeline_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="mx-auto max-w-[1600px] px-6 py-8 md:px-8">
-      <h1 className="text-2xl font-semibold tracking-tight">Data Catalog</h1>
-      <p className="mt-1 text-sm text-slate-500">Every table EasyETL designs or deploys, governed by Unity Catalog — with descriptions, PII classification, quality and lineage.</p>
+    <div className="mx-auto max-w-[1600px] relative px-6 pb-10 pt-2 md:px-8">
+      <FlowArt className="pointer-events-none absolute -top-4 right-8 hidden h-[130px] w-[260px] xl:block" />
+      <h1 className="text-[32px] font-bold leading-tight text-slate-900">Data Catalog</h1>
+      <p className="mt-1.5 max-w-3xl text-[15px] text-slate-600">Every table EasyETL designs or deploys, governed by Unity Catalog — with descriptions, PII classification, quality and lineage.</p>
       <div className="mt-6 grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
         <Card className="h-fit overflow-hidden">
           <div className="border-b border-slate-100 p-3">

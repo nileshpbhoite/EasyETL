@@ -1,6 +1,8 @@
 "use client";
 
-import { Check, CloudCheck, History, LayoutTemplate, Lightbulb, LoaderCircle, Pencil, Sparkles, SlidersHorizontal, Undo2, X } from "lucide-react";
+import { ArrowLeft, Check, CloudCheck, History, LayoutTemplate, LoaderCircle, Pencil, Sparkles, SlidersHorizontal, Undo2 } from "lucide-react";
+import Link from "next/link";
+import { FlowArt } from "@/components/art";
 import { toast } from "sonner";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
@@ -51,28 +53,17 @@ function HistoryDialog({ id, open, onOpenChange, onRestore }: { id: string; open
   );
 }
 
+/** One-line description of each step, shown under the pipeline title. */
 const GUIDE: Record<Step, string> = {
-  source: "Upload a file or pick a system to connect. Not sure where to start? Try one of the sample files.",
-  analyze: "AI has profiled your data. Skim what it found — there's nothing to set up here — then continue.",
-  transform: "Apply the AI suggestions in one click, or add your own from the library. Every change shows a before/after preview.",
-  configure: "We picked the best way to load your data. Keep the recommendation or choose an alternative.",
-  design: "Your Bronze → Silver → Gold tables are designed for you. Rename or adjust them only if you want to.",
-  review: "A final check before going live. Anything flagged can be fixed with one click.",
-  deploy: "One click creates everything in Databricks. You can redeploy at any time.",
-  monitor: "Your pipeline is live. We watch every run and alert you if anything looks unusual.",
+  source: "Connect a source or upload a file. Just exploring? Try one of the sample files.",
+  analyze: "Analyze your data to discover insights, quality issues and recommendations.",
+  transform: "Clean, standardize and enrich your data. Every change is previewed on your real data.",
+  configure: "Choose how your data is loaded. We've recommended the best option for this source.",
+  design: "Design your Bronze → Silver → Gold Lakehouse. Everything is pre-filled; adjust only if you want to.",
+  review: "Review everything in one place. Anything flagged can be fixed with one click.",
+  deploy: "Deploy to Databricks in one click: catalog, pipeline, jobs and governance.",
+  monitor: "Your pipeline is live. Track runs, freshness, quality and AI alerts.",
 };
-
-function useTipsHidden() {
-  const [hidden, setHidden] = useState(false);
-  useEffect(() => {
-    try { setHidden(localStorage.getItem("easyetl.tips.hidden") === "1"); } catch { /* storage unavailable */ }
-  }, []);
-  const set = (v: boolean) => {
-    setHidden(v);
-    try { localStorage.setItem("easyetl.tips.hidden", v ? "1" : "0"); } catch { /* storage unavailable */ }
-  };
-  return [hidden, set] as const;
-}
 
 function Wizard() {
   const { id } = useParams<{ id: string }>();
@@ -84,7 +75,6 @@ function Wizard() {
   const [name, setName] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
   const [templateOpen, setTemplateOpen] = useState(false);
-  const [tipsHidden, setTipsHidden] = useTipsHidden();
 
   const step = (search.get("step") as Step) || pipeline?.metadata.current_step || "source";
 
@@ -121,72 +111,56 @@ function Wizard() {
 
   return (
     <div className="flex min-h-full flex-col">
-      <div className="mx-auto w-full max-w-[1680px] px-5 pt-5 md:px-6">
-        <div className="mb-4 flex flex-wrap items-center gap-3">
-          <div className="min-w-0 flex-1">
-            {editingName ? (
-              <input
-                autoFocus
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                onBlur={saveName}
-                onKeyDown={(e) => e.key === "Enter" && saveName()}
-                className="w-full max-w-lg rounded-md border border-brand-300 bg-white px-2 py-0.5 text-lg font-semibold outline-none ring-2 ring-brand-100"
-              />
-            ) : (
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                <button onClick={() => { setName(pipeline.name); setEditingName(true); }} className="font-display group flex items-center gap-2 text-[22px] font-bold tracking-tight text-slate-900">
-                  {pipeline.name}
-                  <Pencil className="size-3.5 text-slate-300 group-hover:text-slate-500" />
-                </button>
-                <span className="flex items-center gap-2 text-xs text-slate-500">
-                  {busy ? (
-                    <span className="flex items-center gap-1 text-brand-600"><LoaderCircle className="size-3 animate-spin" /> Saving…</span>
-                  ) : (
-                    <span className="flex items-center gap-1"><CloudCheck className="size-3.5 text-emerald-500" /> Saved · v{pipeline.version} · {timeAgo(pipeline.updated_at)}</span>
-                  )}
-                  <span>·</span>
-                  <span className="capitalize">{pipeline.environment}</span>
-                  {meta.deployment.status === "deployed" && <Badge tone="green"><Check /> Deployed</Badge>}
-                </span>
-              </div>
-            )}
-          </div>
+      <div className="relative mx-auto w-full max-w-[1680px] px-5 pt-1 md:px-8">
+        <FlowArt className="absolute -top-3 right-6 hidden h-[170px] w-[340px] xl:block" />
+        <Link href="/pipelines" className="inline-flex items-center gap-2 text-[14px] font-medium text-slate-600 hover:text-slate-900"><ArrowLeft className="size-4" /> Back to Pipelines</Link>
+        <div className="relative mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 xl:pr-[360px]">
+          {editingName ? (
+            <input
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onBlur={saveName}
+              onKeyDown={(e) => e.key === "Enter" && saveName()}
+              className="font-display w-full max-w-xl rounded-xl border border-brand-300 bg-white/90 px-3 py-1 text-[28px] font-bold outline-none ring-4 ring-brand-100"
+            />
+          ) : (
+            <button onClick={() => { setName(pipeline.name); setEditingName(true); }} className="font-display group flex items-center gap-3 text-left text-[30px] font-bold leading-tight tracking-tight text-slate-900 md:text-[34px]">
+              {pipeline.name}
+              <Pencil className="size-5 shrink-0 text-slate-400 group-hover:text-brand-600" />
+            </button>
+          )}
+          <span className="rounded-full bg-brand-50 px-3 py-1 text-[12.5px] font-semibold capitalize text-brand-700 ring-1 ring-brand-100">{pipeline.environment}</span>
+          {meta.deployment.status === "deployed" && <Badge tone="green" className="px-3 py-1 text-[12.5px]"><Check /> Deployed</Badge>}
+          <span className="flex items-center gap-1.5 text-[13.5px] text-slate-500">
+            {busy ? <><LoaderCircle className="size-4 animate-spin text-brand-600" /> Saving…</> : <><CloudCheck className="size-4" /> Saved {timeAgo(pipeline.updated_at)}</>}
+          </span>
+        </div>
+        <div className="relative mt-2 flex flex-wrap items-center gap-3 xl:pr-[360px]">
+          <p className="min-w-0 flex-1 text-[15px] text-slate-600">{GUIDE[step]}</p>
           <Segmented
             size="sm"
             value={meta.mode}
             onChange={(v) => mutate("mode", () => api.patch<Pipeline>(`/api/pipelines/${id}`, { mode: v }))}
             options={[{ value: "simple", label: "Simple", icon: <Sparkles /> }, { value: "advanced", label: "Advanced", icon: <SlidersHorizontal /> }]}
           />
-          <div className="flex items-center rounded-xl border border-slate-200/70 bg-white p-0.5 shadow-sm">
+          <div className="glass-soft flex items-center rounded-xl p-0.5">
             <Tooltip content="Undo last change">
               <Button variant="ghost" size="icon" aria-label="Undo" onClick={() => mutate("undo", () => api.post<Pipeline>(`/api/pipelines/${id}/undo`), { success: "Last change undone" })} disabled={pipeline.version <= 1}><Undo2 /></Button>
             </Tooltip>
-            <Tooltip content="Version history">
+            <Tooltip content={`Version history (v${pipeline.version})`}>
               <Button variant="ghost" size="icon" aria-label="Version history" onClick={() => setHistoryOpen(true)}><History /></Button>
             </Tooltip>
             <Tooltip content="Save as a reusable template">
               <Button variant="ghost" size="icon" aria-label="Save as template" onClick={() => setTemplateOpen(true)} disabled={!meta.transformations.length}><LayoutTemplate /></Button>
             </Tooltip>
-            {tipsHidden && (
-              <Tooltip content="Show tips">
-                <Button variant="ghost" size="icon" aria-label="Show tips" onClick={() => setTipsHidden(false)}><Lightbulb /></Button>
-              </Tooltip>
-            )}
           </div>
         </div>
-        <Stepper current={step} completed={meta.completed_steps} onSelect={goTo} deployed={meta.deployment.status === "deployed"} />
-        {!tipsHidden && GUIDE[step] && (
-          <div key={step} className="mt-3 flex items-center gap-3 rounded-xl border border-amber-200/70 bg-gradient-to-r from-amber-50 to-orange-50/40 px-4 py-2.5 animate-slide-up">
-            <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-600"><Lightbulb className="size-4" /></span>
-            <p className="min-w-0 flex-1 text-[13.5px] text-amber-900"><span className="font-semibold">What to do here: </span>{GUIDE[step]}</p>
-            <button onClick={() => setTipsHidden(true)} className="flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100" aria-label="Hide tips">
-              <X className="size-3.5" /> Hide tips
-            </button>
-          </div>
-        )}
+        <div className="relative mt-5">
+          <Stepper current={step} completed={meta.completed_steps} onSelect={goTo} deployed={meta.deployment.status === "deployed"} />
+        </div>
       </div>
-      <div className="mx-auto w-full max-w-[1680px] flex-1 px-5 py-5 md:px-6">
+      <div className="mx-auto w-full max-w-[1680px] flex-1 px-5 py-5 md:px-8">
         <WizardStepContext.Provider value={{ index: Math.max(0, STEPS.findIndex((s) => s.id === step)), total: STEPS.length, label: STEPS.find((s) => s.id === step)?.label ?? "" }}>
         {step === "source" && <SourceStep {...props} />}
         {step === "analyze" && <AnalyzeStep {...props} />}

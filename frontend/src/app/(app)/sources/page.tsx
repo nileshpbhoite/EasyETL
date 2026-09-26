@@ -1,5 +1,7 @@
 "use client";
 
+import { FlowArt } from "@/components/art";
+
 import { CircleCheck, CircleX, KeyRound, Plug, Search, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -40,9 +42,10 @@ export default function SourcesPage() {
   };
 
   return (
-    <div className="mx-auto max-w-[1400px] px-6 py-8 md:px-8">
-      <h1 className="text-2xl font-semibold tracking-tight">Sources</h1>
-      <p className="mt-1 text-sm text-slate-500">Connect once, reuse in any pipeline. Every connector implements the same SDK: authenticate, test, discover, schema, profile, incremental & CDC detection.</p>
+    <div className="mx-auto max-w-[1400px] relative px-6 pb-10 pt-2 md:px-8">
+      <FlowArt className="pointer-events-none absolute -top-4 right-8 hidden h-[130px] w-[260px] xl:block" />
+      <h1 className="text-[32px] font-bold leading-tight text-slate-900">Sources</h1>
+      <p className="mt-1.5 max-w-3xl text-[15px] text-slate-600">Connect once, reuse in any pipeline. Every connector implements the same SDK: authenticate, test, discover, schema, profile, incremental & CDC detection.</p>
       <Card className="mt-6">
         <CardHeader title="Saved connections" description="Credentials are encrypted at rest and never shown again." icon={<KeyRound />} />
         {!conns?.length ? <EmptyState icon={<Plug />} title="No saved connections" description="Pick a connector below to add one." className="py-8" /> : (

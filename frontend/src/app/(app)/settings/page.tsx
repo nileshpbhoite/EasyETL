@@ -20,8 +20,8 @@ export default function SettingsPage() {
   const isAdmin = user?.role === "admin";
   const { data: audit } = useApi<{ id: number; action: string; resource: string; user_id?: string; details: Record<string, unknown>; at: string }[]>(isAdmin ? "/api/audit?limit=100" : null);
   return (
-    <div className="mx-auto max-w-5xl px-6 py-8">
-      <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+    <div className="mx-auto max-w-5xl relative px-6 pb-10 pt-2 md:px-8">
+      <h1 className="text-[32px] font-bold leading-tight text-slate-900">Settings</h1>
       <Tabs defaultValue="workspace" className="mt-6">
         <TabsList>
           <TabsTrigger value="workspace"><Server /> Workspace</TabsTrigger>

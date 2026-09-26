@@ -48,11 +48,11 @@ function TemplatesInner() {
   };
 
   return (
-    <div className="mx-auto max-w-[1400px] px-6 py-8 md:px-8">
+    <div className="mx-auto max-w-[1400px] relative px-6 pb-10 pt-2 md:px-8">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Templates</h1>
-          <p className="mt-1 text-sm text-slate-500">Reusable pipeline configurations: Create Pipeline → Choose Template → Connect Source. Transformations re-bind to the new source's columns automatically.</p>
+          <h1 className="text-[32px] font-bold leading-tight text-slate-900">Templates</h1>
+          <p className="mt-1.5 max-w-3xl text-[15px] text-slate-600">Reusable pipeline configurations: Create Pipeline → Choose Template → Connect Source. Transformations re-bind to the new source's columns automatically.</p>
         </div>
         <div className="flex gap-2">
           <Segmented size="sm" value={filter} onChange={setFilter} options={[{ value: "all", label: "All" }, { value: "builtin", label: "Built-in" }, { value: "custom", label: "Your team" }]} />

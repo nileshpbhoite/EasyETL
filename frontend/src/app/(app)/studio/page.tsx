@@ -20,11 +20,11 @@ function StudioInner() {
     if (!params.get("pipeline") && withData[0]) router.replace(`/studio?pipeline=${withData[0].id}`);
   }, [withData, params, router]);
   return (
-    <div className="mx-auto max-w-[1700px] px-6 py-8 md:px-8">
+    <div className="mx-auto max-w-[1700px] relative px-6 pb-10 pt-2 md:px-8">
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Transformation Studio</h1>
-          <p className="mt-1 text-sm text-slate-500">Transform data without code — with live Before / After previews and AI recommendations.</p>
+          <h1 className="text-[32px] font-bold leading-tight text-slate-900">Transformation Studio</h1>
+          <p className="mt-1.5 max-w-3xl text-[15px] text-slate-600">Transform data without code — with live Before / After previews and AI recommendations.</p>
         </div>
         <div className="flex items-center gap-2">
           <Select className="w-72" value={id ?? ""} onChange={(v) => router.push(`/studio?pipeline=${v}`)} options={withData.map((p) => ({ value: p.id, label: p.name }))} />

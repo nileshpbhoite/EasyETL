@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, Brain, CalendarClock, CircleCheck, CircleX, Cpu, DollarSign, Info, Layers, LayoutTemplate, Lock, Rocket, ShieldCheck, TriangleAlert, Wand, Zap } from "lucide-react";
+import { ArrowRight, Brain, CalendarClock, CircleCheck, CircleX, Cpu, DollarSign, Info, Layers, LayoutTemplate, Lock, Rocket, ShieldCheck, TriangleAlert, Wand, Zap, ClipboardCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Architecture } from "@/components/lakehouse/Architecture";
@@ -29,14 +29,14 @@ export function ReadinessCheck({ pipeline, mutate, busy, compact }: Pick<StepPro
   const running = busy === "health";
   const checks = compact ? [...hc.checks].sort((a, b) => ["fail", "warn", "info", "pass"].indexOf(a.status) - ["fail", "warn", "info", "pass"].indexOf(b.status)) : hc.checks;
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-200">
-      <div className="flex items-center gap-3 bg-navy-950 px-4 py-3 text-white">
-        <span className="flex size-8 items-center justify-center rounded-lg bg-gradient-to-br from-ai-500 to-brand-500"><Brain className="size-4" /></span>
+    <div className="glass-inset overflow-hidden rounded-2xl">
+      <div className="flex items-center gap-3 bg-gradient-to-r from-brand-50 via-ai-50 to-white px-4 py-3">
+        <span className="icon-tile flex size-9 items-center justify-center rounded-xl text-white"><Brain className="size-[18px]" /></span>
         <div className="min-w-0 flex-1">
-          <div className="text-[14px] font-semibold">AI Pipeline Readiness Check</div>
-          <div className="text-[11.5px] text-slate-400">{hc.ran_at ? `Last run ${timeAgo(hc.ran_at)}` : "Checking everything before deployment"}</div>
+          <div className="text-[14px] font-bold text-slate-900">AI Pipeline Readiness Check</div>
+          <div className="text-[11.5px] text-slate-500">{hc.ran_at ? `Last run ${timeAgo(hc.ran_at)}` : "Checking everything before deployment"}</div>
         </div>
-        {hc.ran_at && !running && <div className="text-xl font-bold">{hc.score}<span className="text-xs font-normal text-slate-400">/100</span></div>}
+        {hc.ran_at && !running && <div className="font-display text-xl font-bold text-slate-900">{hc.score}<span className="text-xs font-normal text-slate-400">/100</span></div>}
         <Button size="sm" variant="secondary" onClick={run} loading={running}>{hc.ran_at ? "Re-run" : "Run"}</Button>
       </div>
       {hc.ran_at && !running && <Progress value={hc.score} tone={hc.ready ? "green" : "amber"} className="h-1 rounded-none" />}
@@ -112,7 +112,7 @@ export function ReviewStep({ pipeline, mutate, busy, goTo }: StepProps) {
 
   return (
     <div className="animate-fade-in">
-      <SectionCard n={6} title="Review & Deploy" subtitle="Review the configuration, insights and deploy to Databricks">
+      <SectionCard icon={<ClipboardCheck />} title="Review & Deploy" subtitle="Review the configuration, insights and deploy to Databricks">
         <LineTabs value={tab} onChange={setTab} className="mb-4" tabs={[
           { value: "summary", label: "Summary" }, { value: "flow", label: "Data Flow" }, { value: "transformations", label: "Transformations" }, { value: "quality", label: "Data Quality" },
           { value: "governance", label: "Governance" }, { value: "cost", label: "Cost Estimate" }, { value: "readiness", label: hc.ran_at ? `Readiness (${hc.score})` : "Readiness" },

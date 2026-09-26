@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>
+      <body className="app-bg">
         {children}
         <Toaster position="top-right" offset={76} richColors closeButton toastOptions={{ className: "!rounded-xl" }} />
       </body>

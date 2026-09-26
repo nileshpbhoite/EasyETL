@@ -11,6 +11,8 @@ import { showError, useApi } from "@/lib/hooks";
 import { STEPS, type PipelineSummary } from "@/lib/types";
 import { cn, humanize, qualityColor, timeAgo } from "@/lib/utils";
 
+const TILE: Record<string, string> = { file: "from-emerald-400 to-teal-500", application: "from-sky-400 to-brand-500", api: "from-rose-400 to-pink-500", database: "from-ai-400 to-brand-600" };
+
 export default function PipelinesPage() {
   const router = useRouter();
   const { data, error, loading, reload } = useApi<PipelineSummary[]>("/api/pipelines");
@@ -41,11 +43,11 @@ export default function PipelinesPage() {
   };
 
   return (
-    <div className="mx-auto max-w-[1400px] px-6 py-8 md:px-8">
+    <div className="mx-auto max-w-[1400px] relative px-6 pb-10 pt-2 md:px-8">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Pipelines</h1>
-          <p className="mt-1 text-sm text-slate-500">Every pipeline is stored as validated metadata — resume any draft exactly where you left off.</p>
+          <h1 className="text-[32px] font-bold leading-tight text-slate-900">Pipelines</h1>
+          <p className="mt-1.5 max-w-3xl text-[15px] text-slate-600">Every pipeline is stored as validated metadata — resume any draft exactly where you left off.</p>
         </div>
         <Link href="/pipelines/new">
           <Button variant="primary">
@@ -75,8 +77,9 @@ export default function PipelinesPage() {
           return (
             <Card key={p.id} className="group relative cursor-pointer p-5 transition-all hover:-translate-y-0.5 hover:shadow-lift" onClick={() => router.push(`/pipelines/${p.id}`)}>
               <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="truncate font-semibold text-slate-900">{p.name}</div>
+                <span className={cn("flex size-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br text-white shadow-md", TILE[p.source_category ?? "file"] ?? TILE.file)}><Workflow className="size-5" /></span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[15px] font-bold text-slate-900">{p.name}</div>
                   <div className="mt-0.5 truncate text-sm text-slate-500">
                     {p.source_label} → {p.target_label}
                   </div>
@@ -96,7 +99,7 @@ export default function PipelinesPage() {
                 </div>
               </div>
               {menu === p.id && (
-                <div className="absolute right-4 top-12 z-10 w-44 rounded-lg border border-slate-200 bg-white p-1 shadow-lift" onClick={(e) => e.stopPropagation()}>
+                <div className="glass absolute right-4 top-12 z-10 w-44 rounded-xl p-1" onClick={(e) => e.stopPropagation()}>
                   {deployed && (
                     <button className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-slate-50" onClick={() => router.push(`/monitoring?pipeline=${p.id}`)}>
                       <Activity className="size-4" /> Monitor

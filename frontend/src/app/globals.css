@@ -11,14 +11,14 @@
   --color-navy-700: #1f2a5c;
   --color-navy-600: #2c3a78;
 
-  --color-brand-50: #eff4ff;
-  --color-brand-100: #dce7fe;
-  --color-brand-200: #c0d4fe;
-  --color-brand-300: #93b4fd;
-  --color-brand-400: #6190fa;
-  --color-brand-500: #3b6ef6;
-  --color-brand-600: #2659eb;
-  --color-brand-700: #1d46d4;
+  --color-brand-50: #eef0ff;
+  --color-brand-100: #e0e5ff;
+  --color-brand-200: #c7cffe;
+  --color-brand-300: #a3b0fc;
+  --color-brand-400: #7b8bfa;
+  --color-brand-500: #5a6cf6;
+  --color-brand-600: #4655ec;
+  --color-brand-700: #3a43cf;
 
   --color-ai-50: #f5f3ff;
   --color-ai-100: #ede9fe;
@@ -31,12 +31,12 @@
   --color-dbx-500: #ff3621;
   --color-dbx-600: #e02d1b;
 
-  --color-canvas: #f4f6fb;
+  --color-canvas: #f3f4fd;
 
-  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 4px 16px -4px rgb(30 58 138 / 0.07);
+  --shadow-card: 0 1px 2px rgb(30 27 75 / 0.04), 0 12px 32px -14px rgb(76 70 180 / 0.22);
   --shadow-soft: 0 1px 1px rgb(15 23 42 / 0.03), 0 10px 30px -12px rgb(30 58 138 / 0.12);
-  --shadow-lift: 0 8px 24px -6px rgb(15 23 42 / 0.12), 0 2px 6px rgb(15 23 42 / 0.05);
-  --shadow-glow: 0 8px 22px -8px rgb(38 89 235 / 0.55);
+  --shadow-lift: 0 18px 40px -14px rgb(76 70 180 / 0.35), 0 2px 6px rgb(30 27 75 / 0.05);
+  --shadow-glow: 0 10px 24px -10px rgb(91 92 255 / 0.85);
 
   --animate-fade-in: fade-in 0.25s ease-out;
   --animate-slide-up: slide-up 0.3s ease-out;
@@ -52,7 +52,8 @@
 @layer base {
   html, body { height: 100%; }
   body {
-    @apply bg-canvas text-slate-700 antialiased;
+    @apply text-slate-700 antialiased;
+    background-attachment: fixed;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
     font-size: 14px;
   }
@@ -62,15 +63,33 @@
 }
 
 @layer components {
-  .gradient-primary { background-image: linear-gradient(135deg, #3d7bff 0%, #2356e8 100%); }
-  .gradient-ai { background-image: linear-gradient(135deg, #8b5cf6 0%, #2659eb 50%, #0ea5e9 100%); }
-  .app-bg { background: radial-gradient(1100px 500px at 100% -10%, rgb(59 110 246 / 0.08), transparent 60%), radial-gradient(900px 500px at -10% 110%, rgb(139 92 246 / 0.05), transparent 60%), #f4f6fb; }
-  .sidebar-bg { background: linear-gradient(180deg, #0f1a4a 0%, #0b1235 55%, #0a0f2c 100%); }
-  .step-badge { background-image: linear-gradient(135deg, #4f86ff 0%, #2356e8 100%); box-shadow: 0 6px 14px -6px rgb(38 89 235 / 0.7); }
+  /* Primary brand gradient: blue → violet, as in the design. */
+  .gradient-primary { background-image: linear-gradient(120deg, #3b63ff 0%, #5b5cff 55%, #8a5cff 100%); }
+  .gradient-ai { background-image: linear-gradient(135deg, #8b5cf6 0%, #5b5cff 50%, #3b82f6 100%); }
+  .gradient-text { background-image: linear-gradient(100deg, #4f6bff 0%, #8b5cf6 60%, #b45cf6 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+  /* Pastel app canvas with soft color washes. */
+  .app-bg {
+    background:
+      radial-gradient(900px 600px at 0% 0%, rgb(199 210 254 / 0.55), transparent 60%),
+      radial-gradient(800px 520px at 100% 0%, rgb(221 214 254 / 0.6), transparent 60%),
+      radial-gradient(900px 700px at 15% 100%, rgb(251 207 232 / 0.35), transparent 60%),
+      radial-gradient(900px 700px at 100% 100%, rgb(191 219 254 / 0.45), transparent 60%),
+      #f3f4fd;
+  }
+  /* Frosted-glass surfaces. */
+  .glass { background: rgb(255 255 255 / 0.72); border: 1px solid rgb(255 255 255 / 0.85); box-shadow: var(--shadow-card); backdrop-filter: blur(18px) saturate(140%); -webkit-backdrop-filter: blur(18px) saturate(140%); }
+  .glass-soft { background: rgb(255 255 255 / 0.55); border: 1px solid rgb(255 255 255 / 0.75); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+  .glass-inset { background: rgb(255 255 255 / 0.6); border: 1px solid rgb(226 232 240 / 0.7); }
+  .sidebar-bg { background: linear-gradient(180deg, rgb(255 255 255 / 0.7) 0%, rgb(248 247 255 / 0.55) 100%); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-right: 1px solid rgb(255 255 255 / 0.8); }
+  .nav-active { background-image: linear-gradient(100deg, #4f6bff 0%, #7c6bff 50%, #b07cff 100%); box-shadow: 0 10px 24px -10px rgb(109 92 255 / 0.75), inset 0 1px 0 rgb(255 255 255 / 0.25); }
+  .step-badge { background-image: linear-gradient(135deg, #5b7cff 0%, #6a5cff 60%, #8a5cff 100%); box-shadow: 0 6px 14px -6px rgb(91 92 255 / 0.8); }
+  .icon-tile { background-image: linear-gradient(135deg, #8b7bff 0%, #5b5cff 100%); box-shadow: 0 10px 22px -10px rgb(91 92 255 / 0.9), inset 0 1px 0 rgb(255 255 255 / 0.35); }
+  .glow-ai { box-shadow: 0 0 0 1px rgb(196 181 253 / 0.9), 0 10px 30px -8px rgb(139 92 246 / 0.55); }
   .lift { @apply transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lift; }
-  .gradient-hero { background-image: radial-gradient(1200px 400px at 0% 0%, rgb(99 102 241 / 0.14), transparent 60%), radial-gradient(800px 300px at 100% 0%, rgb(139 92 246 / 0.14), transparent 60%); }
-  .ai-surface { background-image: linear-gradient(135deg, rgb(245 243 255) 0%, rgb(238 242 255) 100%); }
-  .skeleton { background: linear-gradient(90deg, #eef0f5 25%, #f6f7fb 37%, #eef0f5 63%); background-size: 400% 100%; @apply animate-shimmer rounded-md; }
+  .gradient-hero { background-image: radial-gradient(1200px 400px at 0% 0%, rgb(99 102 241 / 0.10), transparent 60%), radial-gradient(800px 300px at 100% 0%, rgb(139 92 246 / 0.10), transparent 60%); }
+  .ai-surface { background-image: linear-gradient(135deg, rgb(245 243 255 / 0.9) 0%, rgb(238 242 255 / 0.9) 100%); }
+  .skeleton { background: linear-gradient(90deg, #eceefa 25%, #f6f7fd 37%, #eceefa 63%); background-size: 400% 100%; @apply animate-shimmer rounded-md; }
   .scrollbar-thin { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
   .grid-bg { background-image: radial-gradient(circle, rgb(148 163 184 / 0.35) 1px, transparent 1px); background-size: 18px 18px; }
 }

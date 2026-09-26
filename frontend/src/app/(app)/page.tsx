@@ -1,16 +1,23 @@
 "use client";
 
-import { ArrowRight, CircleCheck, Clock, Database, DollarSign, FileUp, Gauge, LayoutTemplate, Plug, Plus, Sparkles, TriangleAlert, Upload, Workflow, Zap } from "lucide-react";
+import {
+  ArrowRight, Cloud, Clock, Database, DollarSign, Ellipsis, FileSpreadsheet, FileUp, Gauge, Globe, LayoutTemplate, Library, MessageCircleQuestion, Plus,
+  SearchCheck, Server, ShieldCheck, Sparkles, TrendingUp, TriangleAlert, Upload, Wand, Workflow, X,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { AIBadge, Button, Card, CardHeader, EmptyState, ErrorBox, Skeleton, StatusBadge } from "@/components/ui";
-import { getStoredUser } from "@/lib/api";
-import { useApi } from "@/lib/hooks";
-import { STEPS, type Alert, type PipelineSummary } from "@/lib/types";
-import { cn, fmtCompact, fmtMinutes, fmtMoney, qualityColor, timeAgo } from "@/lib/utils";
+import { HeroArt, Robot } from "@/components/art";
+import { KpiTile, Ring, type Trend } from "@/components/charts/Mini";
+import { Cylinder } from "@/components/lakehouse/Cylinder";
+import { FileTypeIcon } from "@/components/source/FileTypeIcon";
 import { createPipelineFromFiles } from "@/components/source/upload";
+import { Button, EmptyState, ErrorBox, Skeleton, StatusBadge } from "@/components/ui";
+import { useApi } from "@/lib/hooks";
+import { useUI } from "@/lib/store";
+import { STEPS, type Alert, type PipelineSummary } from "@/lib/types";
+import { cn, fmtCompact, fmtMoney, timeAgo } from "@/lib/utils";
 
 interface Dashboard {
   metrics: {
@@ -23,33 +30,110 @@ interface Dashboard {
     freshness_minutes: number | null;
     estimated_monthly_cost: number;
   };
+  trends?: Record<"active_pipelines" | "data_sources" | "records" | "quality" | "failures" | "cost", Trend>;
   recent_pipelines: PipelineSummary[];
   insights: Alert[];
 }
 
-const START = [
-  { href: "#upload", icon: Upload, title: "Upload a file", desc: "Excel, CSV, JSON, XML, ZIP…", color: "from-brand-400 to-brand-600" },
-  { href: "/sources", icon: Plug, title: "Connect a system", desc: "Salesforce, SAP, SQL Server, APIs", color: "from-sky-400 to-cyan-600" },
-  { href: "/templates", icon: LayoutTemplate, title: "Start from a template", desc: "Customer 360, Sales, Finance…", color: "from-ai-500 to-fuchsia-500" },
+const QUICK = [
+  { href: "/sources", icon: Database, title: "Connect Data", desc: "Apps, databases, files, APIs & more", tile: "from-sky-400 to-brand-500" },
+  { href: "#upload", icon: Upload, title: "Upload File", desc: "Excel, CSV, JSON, XML, Parquet…", tile: "from-brand-400 to-ai-600" },
+  { href: "/pipelines/new", icon: Sparkles, title: "Create Pipeline", desc: "Guided, AI-powered wizard", tile: "from-ai-400 to-fuchsia-500" },
+  { href: "/templates", icon: LayoutTemplate, title: "Use Template", desc: "Pre-built templates for common use cases", tile: "from-emerald-400 to-teal-500" },
+  { href: "/catalog", icon: Library, title: "Explore Catalog", desc: "Discover tables, lineage and quality", tile: "from-amber-400 to-orange-500" },
 ];
 
-function InsightRow({ a }: { a: Alert }) {
-  const Icon = a.severity === "critical" ? TriangleAlert : a.severity === "warning" ? TriangleAlert : a.kind === "recommendations" ? Sparkles : CircleCheck;
+const PROMPTS = [
+  { icon: SearchCheck, text: "Analyze my latest data" },
+  { icon: Wand, text: "Suggest transformations" },
+  { icon: MessageCircleQuestion, text: "Why did this pipeline fail?" },
+];
+
+const CATEGORY_TILE: Record<string, { icon: typeof Database; cls: string }> = {
+  file: { icon: FileSpreadsheet, cls: "from-emerald-400 to-teal-500" },
+  application: { icon: Cloud, cls: "from-sky-400 to-brand-500" },
+  api: { icon: Globe, cls: "from-rose-400 to-pink-500" },
+  database: { icon: Server, cls: "from-ai-400 to-brand-600" },
+};
+
+const ENGINE: Record<string, string> = { auto_loader: "File ingestion", lakeflow_connect: "Incremental sync", rest_api: "REST API ingestion", jdbc: "Batch ingestion", batch: "Batch ingestion", streaming: "Streaming" };
+
+function dayLabels() {
+  const now = Date.now();
+  return Array.from({ length: 7 }, (_, i) => new Date(now - (6 - i) * 86400000).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }));
+}
+
+/** How each insight is presented and what its action button does. */
+function insightStyle(a: Alert) {
+  const monitor = a.pipeline_id ? `/monitoring?pipeline=${a.pipeline_id}` : "/monitoring";
+  const pipe = (step: string) => (a.pipeline_id ? `/pipelines/${a.pipeline_id}?step=${step}` : "/pipelines");
+  switch (a.kind) {
+    case "schema": return { icon: TriangleAlert, cls: "bg-brand-50 text-brand-600 ring-brand-100", action: "Review", href: pipe("transform") };
+    case "recommendations": return { icon: Sparkles, cls: "bg-ai-50 text-ai-600 ring-ai-100", action: "Review", href: pipe("analyze") };
+    case "cost": return { icon: DollarSign, cls: "bg-rose-50 text-rose-500 ring-rose-100", action: "Review", href: monitor };
+    case "freshness": return { icon: Clock, cls: "bg-amber-50 text-amber-600 ring-amber-100", action: "Investigate", href: monitor };
+    case "performance": return { icon: Gauge, cls: "bg-amber-50 text-amber-600 ring-amber-100", action: "Investigate", href: monitor };
+    case "volume":
+      return a.severity === "info"
+        ? { icon: TrendingUp, cls: "bg-emerald-50 text-emerald-600 ring-emerald-100", action: "View", href: monitor }
+        : { icon: TriangleAlert, cls: "bg-amber-50 text-amber-600 ring-amber-100", action: "Investigate", href: monitor };
+    case "quality": return { icon: ShieldCheck, cls: a.severity === "info" ? "bg-emerald-50 text-emerald-600 ring-emerald-100" : "bg-amber-50 text-amber-600 ring-amber-100", action: a.severity === "info" ? "View" : "Investigate", href: monitor };
+    case "failure": return { icon: TriangleAlert, cls: a.severity === "critical" ? "bg-rose-50 text-rose-500 ring-rose-100" : "bg-amber-50 text-amber-600 ring-amber-100", action: "Investigate", href: monitor };
+    default: return { icon: Sparkles, cls: "bg-brand-50 text-brand-600 ring-brand-100", action: "View", href: monitor };
+  }
+}
+
+function RowMenu({ p }: { p: PipelineSummary }) {
+  const [open, setOpen] = useState(false);
   return (
-    <Link href={a.pipeline_id ? (a.kind === "recommendations" ? `/pipelines/${a.pipeline_id}?step=analyze` : `/monitoring?pipeline=${a.pipeline_id}`) : "/monitoring"} className="group flex gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-white/70">
-      <Icon className={cn("mt-0.5 size-4 shrink-0", a.severity === "critical" ? "text-rose-500" : a.severity === "warning" ? "text-amber-500" : "text-ai-500")} />
-      <div className="min-w-0 flex-1">
-        <div className="text-sm text-slate-800">{a.title}</div>
-        {(a.recommendation || a.pipeline_name) && (
-          <div className="mt-0.5 text-xs text-slate-500">
-            {a.pipeline_name && <span className="font-medium text-slate-600">{a.pipeline_name}</span>}
-            {a.pipeline_name && a.recommendation && " · "}
-            {a.recommendation}
+    <div className="relative" onClick={(e) => e.stopPropagation()}>
+      <Button variant="ghost" size="icon" aria-label={`Actions for ${p.name}`} onClick={() => setOpen((v) => !v)}><Ellipsis /></Button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+          <div className="glass absolute right-0 top-10 z-40 w-44 rounded-xl p-1 text-sm animate-fade-in">
+            <Link href={`/pipelines/${p.id}`} className="block rounded-lg px-3 py-2 text-slate-700 hover:bg-white">Open pipeline</Link>
+            {p.deployment_status === "deployed" && <Link href={`/monitoring?pipeline=${p.id}`} className="block rounded-lg px-3 py-2 text-slate-700 hover:bg-white">View monitoring</Link>}
+            <Link href={`/catalog`} className="block rounded-lg px-3 py-2 text-slate-700 hover:bg-white">Open in catalog</Link>
           </div>
-        )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function AssistantCard() {
+  const { openAssistant } = useUI();
+  const [hidden, setHidden] = useState(false);
+  const [q, setQ] = useState("");
+  useEffect(() => {
+    try { setHidden(localStorage.getItem("easyetl.home.assistant") === "hidden"); } catch { /* storage unavailable */ }
+  }, []);
+  if (hidden) return null;
+  const ask = (question: string) => openAssistant({ pipelineId: undefined, page: "home", question });
+  return (
+    <section className="relative overflow-hidden rounded-[22px] border border-white/80 bg-gradient-to-br from-white/85 via-ai-50/80 to-brand-100/70 p-5 shadow-card backdrop-blur-xl">
+      <button onClick={() => { setHidden(true); try { localStorage.setItem("easyetl.home.assistant", "hidden"); } catch { /* storage unavailable */ } }}
+        className="absolute right-3 top-3 rounded-lg p-1 text-slate-400 hover:bg-white/70 hover:text-slate-600" aria-label="Hide AI Assistant card"><X className="size-4" /></button>
+      <div className="flex items-center gap-3">
+        <Robot size={76} />
+        <div>
+          <h2 className="text-[19px] font-bold text-slate-900">AI Assistant</h2>
+          <p className="text-[13px] leading-snug text-slate-500">Your personal data engineering copilot</p>
+        </div>
       </div>
-      <ArrowRight className="mt-0.5 size-4 shrink-0 text-slate-300 transition-transform group-hover:translate-x-0.5 group-hover:text-slate-500" />
-    </Link>
+      <div className="mt-4 flex flex-col items-start gap-2">
+        {PROMPTS.map((p) => (
+          <button key={p.text} onClick={() => ask(p.text)} className="flex items-center gap-2 rounded-full bg-white/85 px-3.5 py-1.5 text-[12.5px] font-medium text-slate-700 ring-1 ring-slate-200/70 transition-all hover:-translate-y-px hover:text-brand-700 hover:ring-brand-200">
+            <p.icon className="size-3.5 text-brand-500" /> {p.text}
+          </button>
+        ))}
+      </div>
+      <form onSubmit={(e) => { e.preventDefault(); if (q.trim()) { ask(q.trim()); setQ(""); } }} className="mt-4 flex items-center gap-2 rounded-2xl bg-white/90 py-1.5 pl-4 pr-1.5 ring-1 ring-slate-200/70">
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ask anything…" aria-label="Ask the AI Assistant" className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400" />
+        <button type="submit" aria-label="Send" className="gradient-primary flex size-9 items-center justify-center rounded-full text-white shadow-glow"><ArrowRight className="size-4" /></button>
+      </form>
+    </section>
   );
 }
 
@@ -59,9 +143,7 @@ export default function HomePage() {
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
-  const user = typeof window !== "undefined" ? getStoredUser() : null;
-  const hour = new Date().getHours();
-  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const labels = dayLabels();
 
   const handleFiles = async (files: FileList | File[]) => {
     const list = Array.from(files);
@@ -77,26 +159,19 @@ export default function HomePage() {
   };
 
   const m = data?.metrics;
-  const inProgress = (data?.recent_pipelines ?? []).filter((p) => p.deployment_status !== "deployed").slice(0, 3);
+  const t = data?.trends;
+  const insights = (data?.insights ?? []).filter((i) => i.kind !== "summary");
+
   return (
     <div
       className="relative min-h-full"
-      onDragOver={(e) => {
-        e.preventDefault();
-        setDragging(true);
-      }}
-      onDragLeave={(e) => {
-        if (e.currentTarget === e.target) setDragging(false);
-      }}
-      onDrop={(e) => {
-        e.preventDefault();
-        setDragging(false);
-        void handleFiles(e.dataTransfer.files);
-      }}
+      onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+      onDragLeave={(e) => { if (e.currentTarget === e.target) setDragging(false); }}
+      onDrop={(e) => { e.preventDefault(); setDragging(false); void handleFiles(e.dataTransfer.files); }}
     >
       {(dragging || uploading) && (
-        <div className="pointer-events-none fixed inset-0 z-30 flex items-center justify-center bg-brand-600/10 backdrop-blur-sm md:left-[240px]">
-          <div className="rounded-2xl border-2 border-dashed border-brand-400 bg-white/90 px-12 py-10 text-center shadow-lift">
+        <div className="pointer-events-none fixed inset-0 z-30 flex items-center justify-center bg-brand-500/10 backdrop-blur-sm md:left-[256px]">
+          <div className="glass rounded-3xl border-2 border-dashed border-brand-300 px-12 py-10 text-center">
             <FileUp className="mx-auto size-10 text-brand-600" />
             <div className="mt-3 text-lg font-semibold">{uploading ? "Uploading & detecting…" : "Drop anything here"}</div>
             <div className="text-sm text-slate-500">We'll create a pipeline and analyze it automatically</div>
@@ -105,145 +180,160 @@ export default function HomePage() {
       )}
       <input ref={fileInput} type="file" multiple hidden onChange={(e) => e.target.files && handleFiles(e.target.files)} />
 
-      <div className="mx-auto max-w-[1400px] space-y-6 px-6 py-7 md:px-8">
-        {/* Welcome + the three ways to start */}
-        <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-navy-900 via-[#1a2a78] to-brand-700 p-7 text-white shadow-soft md:p-9">
-          <div aria-hidden className="pointer-events-none absolute -right-24 -top-24 size-80 rounded-full bg-ai-500/30 blur-3xl" />
-          <div aria-hidden className="pointer-events-none absolute -bottom-32 left-1/3 size-80 rounded-full bg-sky-400/20 blur-3xl" />
-          <div className="relative">
-            <div className="text-sm font-medium text-brand-200">{greeting}{user?.name ? `, ${user.name.split(" ")[0]}` : ""} 👋</div>
-            <h1 className="mt-1.5 text-[28px] font-bold leading-tight md:text-[32px]">What would you like to do today?</h1>
-            <p className="mt-1.5 max-w-2xl text-[15px] text-slate-300">Bring in any data, let AI clean it up, and publish it to Databricks — no code needed.</p>
-            <div className="mt-6 grid gap-3 md:grid-cols-3">
-              {START.map((q) => (
-                <button
-                  key={q.title}
-                  onClick={() => (q.href === "#upload" ? fileInput.current?.click() : router.push(q.href))}
-                  className="group flex items-center gap-4 rounded-2xl border border-white/10 bg-white/[0.07] p-4 text-left backdrop-blur transition-all hover:-translate-y-0.5 hover:border-white/25 hover:bg-white/[0.12]"
-                >
-                  <span className={cn("flex size-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-white shadow-lg", q.color)}><q.icon className="size-6" /></span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-[15px] font-semibold">{q.title}</span>
-                    <span className="block text-[13px] text-slate-300">{q.desc}</span>
-                  </span>
-                  <ArrowRight className="size-5 shrink-0 text-white/40 transition-all group-hover:translate-x-0.5 group-hover:text-white" />
-                </button>
-              ))}
+      <div className="mx-auto max-w-[1560px] space-y-6 px-5 pb-10 md:px-8">
+        {/* Hero */}
+        <section className="relative min-h-[250px] pt-4">
+          <HeroArt className="absolute -top-16 right-0 hidden h-[330px] w-[620px] lg:block" />
+          <div className="relative max-w-[620px]">
+            <h1 className="text-[36px] font-bold leading-[1.1] text-slate-900 md:text-[46px]">
+              Turn <span className="gradient-text italic">any</span> data into insights on Databricks.
+            </h1>
+            <p className="mt-4 text-[17px] text-slate-600">Connect • Analyze • Transform • Deploy — No code, ever.</p>
+            <div className="mt-7 flex flex-wrap gap-3">
+              <Link href="/pipelines/new"><Button variant="primary" size="lg" className="h-12 rounded-2xl px-6"><Plus /> Create Pipeline</Button></Link>
+              <Button variant="secondary" size="lg" className="h-12 rounded-2xl px-6" onClick={() => fileInput.current?.click()}><Upload /> Upload a File</Button>
             </div>
-            <div className="mt-4 flex items-center gap-2 text-[12.5px] text-slate-400"><FileUp className="size-3.5" /> Tip: you can drop a file anywhere on this page.</div>
           </div>
         </section>
 
         <ErrorBox error={error} onRetry={reload} />
 
-        {/* Continue where you left off */}
-        {inProgress.length > 0 && (
-          <section>
-            <div className="mb-3 flex items-end justify-between">
-              <div>
-                <h2 className="text-[18px] font-bold text-slate-900">Continue where you left off</h2>
-                <p className="text-[13px] text-slate-500">Pipelines you started but haven't deployed yet</p>
-              </div>
-              <Link href="/pipelines" className="text-sm font-semibold text-brand-600 hover:text-brand-700">All pipelines →</Link>
-            </div>
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {inProgress.map((p) => {
-                const idx = Math.max(0, STEPS.findIndex((s) => s.id === p.current_step));
-                const pct = Math.round((Math.max(p.completed_steps.length, idx) / STEPS.length) * 100);
-                return (
-                  <Link key={p.id} href={`/pipelines/${p.id}`} className="lift group rounded-2xl border border-slate-200/60 bg-white p-5 shadow-card">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="truncate text-[15px] font-semibold text-slate-900">{p.name}</div>
-                        <div className="truncate text-xs text-slate-500">{p.source_label} · edited {timeAgo(p.updated_at)}</div>
-                      </div>
-                      <span className="shrink-0 rounded-full bg-brand-50 px-2.5 py-1 text-[11px] font-semibold text-brand-700">Step {idx + 1} of {STEPS.length}</span>
-                    </div>
-                    <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">
-                      <div className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-brand-500" style={{ width: `${Math.max(pct, 6)}%` }} />
-                    </div>
-                    <div className="mt-3 flex items-center justify-between text-[13px]">
-                      <span className="text-slate-500">Next: <span className="font-medium text-slate-700">{STEPS[idx]?.label} · {STEPS[idx]?.hint}</span></span>
-                      <span className="flex items-center gap-1 font-semibold text-brand-600">Continue <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" /></span>
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
-          </section>
-        )}
-
-        {/* At a glance */}
-        <section className="rounded-2xl border border-slate-200/60 bg-white shadow-card">
-          <div className="grid grid-cols-2 divide-slate-100 sm:grid-cols-4 xl:grid-cols-7 xl:divide-x">
-            {loading || !m
-              ? Array.from({ length: 7 }).map((_, i) => (
-                  <div key={i} className="p-5"><Skeleton className="h-3 w-20" /><Skeleton className="mt-3 h-7 w-16" /></div>
-                ))
-              : [
-                  { label: "Active pipelines", value: m.active_pipelines, sub: `${m.total_pipelines} total`, icon: Workflow, tone: "text-brand-600 bg-brand-50" },
-                  { label: "Data sources", value: m.data_sources, sub: "connected", icon: Database, tone: "text-sky-600 bg-sky-50" },
-                  { label: "Records (24h)", value: fmtCompact(m.records_24h), sub: "processed", icon: Zap, tone: "text-ai-600 bg-ai-50" },
-                  { label: "Data quality", value: <span className={qualityColor(m.quality_score)}>{m.quality_score ? `${m.quality_score}%` : "—"}</span>, sub: "deployed pipelines", icon: Gauge, tone: "text-emerald-600 bg-emerald-50" },
-                  { label: "Failed", value: <span className={m.failed_pipelines ? "text-rose-600" : ""}>{m.failed_pipelines}</span>, sub: m.failed_pipelines ? "needs attention" : "all healthy", icon: TriangleAlert, tone: m.failed_pipelines ? "text-rose-600 bg-rose-50" : "text-slate-500 bg-slate-100" },
-                  { label: "Freshness", value: fmtMinutes(m.freshness_minutes), sub: "oldest load", icon: Clock, tone: "text-amber-600 bg-amber-50" },
-                  { label: "Est. cost", value: fmtMoney(m.estimated_monthly_cost, 0), sub: "per month", icon: DollarSign, tone: "text-slate-600 bg-slate-100" },
-                ].map((k) => (
-                  <div key={k.label} className="p-5">
-                    <div className="flex items-center gap-2 text-[12.5px] font-medium text-slate-500">
-                      <span className={cn("flex size-6 items-center justify-center rounded-md", k.tone)}><k.icon className="size-3.5" /></span>
-                      {k.label}
-                    </div>
-                    <div className="font-display mt-2 text-[24px] font-bold text-slate-900">{k.value}</div>
-                    <div className="text-xs text-slate-400">{k.sub}</div>
-                  </div>
-                ))}
-          </div>
+        {/* KPIs */}
+        <section className="grid grid-cols-2 gap-4 md:grid-cols-3 2xl:grid-cols-6">
+          {loading || !m
+            ? Array.from({ length: 6 }).map((_, i) => <div key={i} className="glass h-[112px] rounded-[18px] p-4"><Skeleton className="h-4 w-24" /><Skeleton className="mt-5 h-8 w-20" /></div>)
+            : (
+              <>
+                <KpiTile icon={<Workflow />} iconClass="bg-ai-50 text-ai-600" label="Active Pipelines" value={m.active_pipelines} trend={t?.active_pipelines} tone="violet" labels={labels} />
+                <KpiTile icon={<Database />} iconClass="bg-brand-50 text-brand-600" label="Data Sources" value={m.data_sources} trend={t?.data_sources} tone="blue" labels={labels} />
+                <KpiTile icon={<Database />} iconClass="bg-fuchsia-50 text-fuchsia-600" label="Records (24h)" value={fmtCompact(m.records_24h)} trend={t?.records} tone="violet" labels={labels} format={(v) => `${fmtCompact(v)} records`} />
+                <KpiTile icon={<ShieldCheck />} iconClass="bg-emerald-50 text-emerald-600" label="Data Quality Score" value={m.quality_score ? `${m.quality_score}%` : "—"} trend={t?.quality} tone="green" labels={labels} format={(v) => `${v.toFixed(1)}% avg`} />
+                <KpiTile icon={<TriangleAlert />} iconClass="bg-rose-50 text-rose-500" label="Failed Runs (7d)" value={t ? t.failures.series.reduce((a, b) => a + b, 0) : m.failed_pipelines} trend={t?.failures} tone="red" labels={labels} format={(v) => `${v} failed run${v === 1 ? "" : "s"}`} />
+                <KpiTile icon={<DollarSign />} iconClass="bg-sky-50 text-sky-600" label="Est. Databricks Cost" value={fmtMoney(m.estimated_monthly_cost, 0)} trend={t?.cost} tone="blue" labels={labels} format={(v) => fmtMoney(v, 2)} />
+              </>
+            )}
         </section>
 
-        <div className="grid gap-6 xl:grid-cols-3">
-          <Card className="xl:col-span-2">
-            <CardHeader
-              title="Recent pipelines"
-              description="Click a pipeline to open it"
-              icon={<Workflow />}
-              actions={<Link href="/pipelines"><Button variant="ghost" size="sm">View all <ArrowRight /></Button></Link>}
-            />
-            {data && data.recent_pipelines.length === 0 ? (
-              <EmptyState icon={<Workflow />} title="No pipelines yet" description="Drop a file anywhere on this page or create your first pipeline." action={<Link href="/pipelines/new"><Button variant="primary"><Plus /> Create Pipeline</Button></Link>} />
-            ) : (
-              <div className="divide-y divide-slate-100">
-                {(data?.recent_pipelines ?? []).slice(0, 6).map((p) => (
-                  <button key={p.id} onClick={() => router.push(p.deployment_status === "deployed" ? `/monitoring?pipeline=${p.id}` : `/pipelines/${p.id}`)} className="flex w-full items-center gap-4 px-5 py-3.5 text-left transition-colors hover:bg-slate-50/80">
-                    <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-50 to-ai-50 text-brand-600 ring-1 ring-brand-100"><Workflow className="size-5" /></span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate font-semibold text-slate-900">{p.name}</span>
-                      <span className="block truncate text-xs text-slate-500">{p.source_label} → <span className="font-mono">{p.target_label}</span></span>
-                    </span>
-                    <span className="hidden w-28 text-xs text-slate-500 md:block">{p.last_run ? <>Ran {timeAgo(p.last_run.started_at)}</> : "Not run yet"}</span>
-                    <span className={cn("hidden w-14 text-right text-sm font-semibold tabular-nums sm:block", qualityColor(p.quality_score))}>{p.quality_score ? `${p.quality_score}%` : "—"}</span>
-                    <span className="w-28 text-right"><StatusBadge status={p.status} /></span>
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="min-w-0 space-y-6">
+            {/* Quick actions */}
+            <section>
+              <div className="mb-3 flex items-end justify-between">
+                <div>
+                  <h2 className="text-[22px] font-bold text-slate-900">Quick Actions</h2>
+                  <p className="text-[14px] text-slate-500">Start your data journey in seconds</p>
+                </div>
+                <Link href="/help" className="flex items-center gap-1 text-sm font-medium text-slate-600 hover:text-slate-900">Learn more <ArrowRight className="size-4" /></Link>
+              </div>
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
+                {QUICK.map((q) => (
+                  <button key={q.title} onClick={() => (q.href === "#upload" ? fileInput.current?.click() : router.push(q.href))}
+                    className="glass lift group flex flex-col rounded-[20px] p-5 text-left">
+                    <span className={cn("flex size-12 items-center justify-center rounded-2xl bg-gradient-to-br text-white shadow-lg", q.tile)}><q.icon className="size-6" /></span>
+                    <span className="mt-5 text-[15px] font-bold text-slate-900">{q.title}</span>
+                    <span className="mt-1 text-[12.5px] leading-snug text-slate-500">{q.desc}</span>
+                    <ArrowRight className="mt-4 size-4 text-slate-700 transition-transform group-hover:translate-x-1 group-hover:text-brand-600" />
                   </button>
                 ))}
               </div>
-            )}
-          </Card>
+            </section>
 
-          <Card className="overflow-hidden">
-            <div className="ai-surface border-b border-ai-100 px-5 py-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 font-semibold text-ai-900"><Sparkles className="size-4 text-ai-600" /> AI Insights</div>
-                <AIBadge label="Live" />
+            {/* Recent pipelines */}
+            <section>
+              <div className="mb-3 flex items-end justify-between">
+                <div>
+                  <h2 className="text-[22px] font-bold text-slate-900">Recent Pipelines</h2>
+                  <p className="text-[14px] text-slate-500">Your latest work across all environments</p>
+                </div>
+                <Link href="/pipelines" className="flex items-center gap-1 text-sm font-medium text-slate-600 hover:text-slate-900">View all <ArrowRight className="size-4" /></Link>
               </div>
-              <p className="mt-0.5 text-xs text-ai-800/70">Things worth your attention across all pipelines</p>
-            </div>
-            <div className="space-y-0.5 p-2">
-              {loading && Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="m-3 h-4" />)}
-              {data?.insights.length === 0 && <div className="px-3 py-8 text-center text-sm text-slate-500">Everything looks healthy. ✨</div>}
-              {data?.insights.slice(0, 5).map((a) => <InsightRow key={a.id} a={a} />)}
-              {(data?.insights.length ?? 0) > 5 && <Link href="/monitoring" className="block px-3 py-2 text-sm font-semibold text-brand-600 hover:text-brand-700">See all {data?.insights.length} insights →</Link>}
-            </div>
-          </Card>
+              <div className="glass overflow-x-auto rounded-[20px]">
+                {data && data.recent_pipelines.length === 0 ? (
+                  <EmptyState icon={<Workflow />} title="No pipelines yet" description="Drop a file anywhere on this page or create your first pipeline." action={<Link href="/pipelines/new"><Button variant="primary"><Plus /> Create Pipeline</Button></Link>} />
+                ) : (
+                  <table className="w-full min-w-[760px] text-sm">
+                    <thead>
+                      <tr className="text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                        <th className="px-5 pb-2 pt-4">Pipeline</th>
+                        <th className="px-3 pb-2 pt-4">Source → Target</th>
+                        <th className="px-3 pb-2 pt-4">Status</th>
+                        <th className="px-3 pb-2 pt-4">Last run</th>
+                        <th className="px-3 pb-2 pt-4 text-right">Records</th>
+                        <th className="px-3 pb-2 pt-4">Quality</th>
+                        <th className="w-12 px-3 pb-2 pt-4"><span className="sr-only">Actions</span></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {loading && !data && Array.from({ length: 4 }).map((_, i) => <tr key={i}><td colSpan={7} className="px-5 py-3"><Skeleton className="h-8" /></td></tr>)}
+                      {(data?.recent_pipelines ?? []).slice(0, 6).map((p) => {
+                        const tile = CATEGORY_TILE[p.source_category ?? "file"] ?? CATEGORY_TILE.file;
+                        const stepIdx = Math.max(0, STEPS.findIndex((s) => s.id === p.current_step));
+                        const deployed = p.deployment_status === "deployed";
+                        const status = !deployed ? "draft" : p.last_run?.status === "failed" ? "failed" : p.status;
+                        return (
+                          <tr key={p.id} onClick={() => router.push(deployed ? `/monitoring?pipeline=${p.id}` : `/pipelines/${p.id}`)} className="cursor-pointer border-t border-slate-200/50 transition-colors hover:bg-white/60">
+                            <td className="px-5 py-3">
+                              <div className="flex items-center gap-3">
+                                <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-white shadow-sm", tile.cls)}><tile.icon className="size-[18px]" /></span>
+                                <div className="min-w-0">
+                                  <div className="truncate font-semibold text-slate-900">{p.name}</div>
+                                  <div className="truncate text-xs text-slate-500">{p.source_label} · {ENGINE[p.ingestion_engine ?? ""] ?? "Ingestion"}</div>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-3 py-3">
+                              <span className="flex items-center gap-1.5" title={`${p.source_label} → ${p.target_label}`}>
+                                <FileTypeIcon format={p.source_format ?? (p.source_category === "api" ? "api" : p.source_category === "file" ? "txt" : "table")} size={20} />
+                                <ArrowRight className="size-3 text-slate-300" />
+                                <Cylinder layer="gold" size={22} />
+                              </span>
+                            </td>
+                            <td className="px-3 py-3"><StatusBadge status={status} /></td>
+                            <td className="px-3 py-3 text-slate-600">{deployed ? (p.last_run ? timeAgo(p.last_run.started_at) : "—") : <span className="text-brand-600">Step {stepIdx + 1} of {STEPS.length}</span>}</td>
+                            <td className="px-3 py-3 text-right tabular-nums text-slate-700">{deployed ? fmtCompact(p.records_processed) : "—"}</td>
+                            <td className="px-3 py-3">
+                              <span className="flex items-center gap-2">
+                                <Ring value={p.quality_score} size={22} stroke={3.5} />
+                                <span className="font-semibold tabular-nums text-slate-700">{p.quality_score ? `${p.quality_score}%` : "—"}</span>
+                              </span>
+                            </td>
+                            <td className="px-3 py-3"><RowMenu p={p} /></td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </section>
+          </div>
+
+          <div className="space-y-6">
+            <AssistantCard />
+            <section className="glass rounded-[22px] p-5">
+              <div className="flex items-center justify-between">
+                <h2 className="flex items-center gap-2 text-[15px] font-bold text-slate-900"><Sparkles className="size-5 text-ai-500" /> Insights & Recommendations</h2>
+                <Link href="/monitoring" className="flex shrink-0 items-center gap-1 text-[13px] font-medium text-slate-600 hover:text-slate-900">View all <ArrowRight className="size-3.5" /></Link>
+              </div>
+              <div className="mt-3 divide-y divide-slate-200/50">
+                {loading && !data && Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="my-3 h-10" />)}
+                {data && insights.length === 0 && <div className="py-8 text-center text-sm text-slate-500">Everything looks healthy. ✨</div>}
+                {insights.slice(0, 5).map((a) => {
+                  const st = insightStyle(a);
+                  return (
+                    <div key={a.id} className="flex items-start gap-3 py-3">
+                      <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-full ring-1", st.cls)}><st.icon className="size-[18px]" /></span>
+                      <div className="min-w-0 flex-1">
+                        <div className="line-clamp-2 text-[13px] font-semibold leading-snug text-slate-900">{a.title}</div>
+                        <div className="mt-0.5 line-clamp-2 text-[12px] leading-snug text-slate-500">{a.pipeline_name && <span className="font-medium text-slate-600">{a.pipeline_name} · </span>}{a.recommendation}</div>
+                      </div>
+                      <Link href={st.href} className="shrink-0 rounded-lg bg-brand-50 px-3 py-1.5 text-[12px] font-semibold text-brand-700 ring-1 ring-brand-100 hover:bg-brand-100">{st.action}</Link>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          </div>
         </div>
       </div>
     </div>

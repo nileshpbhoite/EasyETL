@@ -1,3 +1,4 @@
+import { FlowArt } from "@/components/art";
 import { BookOpen, Brain, Cable, Layers, Rocket, ShieldCheck, Wand } from "lucide-react";
 import Link from "next/link";
 
@@ -12,22 +13,23 @@ const TOPICS = [
 
 export default function HelpPage() {
   return (
-    <div className="mx-auto max-w-5xl px-6 py-10">
-      <div className="flex items-center gap-3"><BookOpen className="size-7 text-brand-600" /><h1 className="text-2xl font-semibold tracking-tight">Help & Documentation</h1></div>
-      <p className="mt-2 text-slate-500">You choose what you want. EasyETL figures out how to do it.</p>
+    <div className="mx-auto max-w-5xl relative px-6 pb-10 pt-2 md:px-8">
+      <FlowArt className="pointer-events-none absolute -top-4 right-8 hidden h-[130px] w-[260px] xl:block" />
+      <div className="flex items-center gap-3"><BookOpen className="size-7 text-brand-600" /><h1 className="text-[32px] font-bold leading-tight text-slate-900">Help & Documentation</h1></div>
+      <p className="mt-1.5 text-[15px] text-slate-600">You choose what you want. EasyETL figures out how to do it.</p>
       <div className="mt-8 grid gap-4 md:grid-cols-2">
         {TOPICS.map((t) => (
-          <div key={t.title} className="rounded-xl border border-slate-200 bg-white p-5 shadow-card">
+          <div key={t.title} className="glass rounded-[20px] p-5">
             <t.icon className="size-5 text-brand-600" />
             <div className="mt-3 font-semibold text-slate-900">{t.title}</div>
             <p className="mt-1 text-sm leading-relaxed text-slate-600">{t.body}</p>
           </div>
         ))}
       </div>
-      <div className="mt-8 rounded-xl bg-navy-900 p-6 text-white">
-        <div className="font-semibold">The journey</div>
-        <div className="mt-2 text-sm text-slate-300">Connect anything → AI analyzes → AI explains → AI recommends → you approve → Transformation Studio → Before/After → ingestion → Lakehouse design → governance & quality → health check → one-click deploy → continuous monitoring.</div>
-        <Link href="/pipelines/new" className="mt-4 inline-block rounded-lg gradient-primary px-4 py-2 text-sm font-semibold">Create your first pipeline →</Link>
+      <div className="mt-8 rounded-[22px] bg-gradient-to-br from-brand-100/80 via-ai-50 to-white p-6 ring-1 ring-white shadow-card">
+        <div className="font-bold text-slate-900">The journey</div>
+        <div className="mt-2 text-sm text-slate-600">Connect anything → AI analyzes → AI explains → AI recommends → you approve → Transformation Studio → Before/After → ingestion → Lakehouse design → governance & quality → health check → one-click deploy → continuous monitoring.</div>
+        <Link href="/pipelines/new" className="mt-4 inline-block rounded-xl gradient-primary px-4 py-2 text-sm font-semibold text-white shadow-glow">Create your first pipeline →</Link>
       </div>
     </div>
   );

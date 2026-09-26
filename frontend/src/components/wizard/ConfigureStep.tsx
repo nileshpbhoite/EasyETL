@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, Bot, Cable, CalendarClock, FileStack, Globe, HardDriveDownload, Radio, RefreshCw, ShieldAlert, Sparkles, Star, Workflow, Zap } from "lucide-react";
+import { ArrowRight, Bot, Cable, CalendarClock, FileStack, Globe, HardDriveDownload, Radio, RefreshCw, ShieldAlert, Sparkles, Star, Workflow, Zap, Settings2 } from "lucide-react";
 import { useState } from "react";
 import { Badge, Button, Callout, Card, CardHeader, Dialog, Field, Input, Segmented, Select, Switch } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -50,7 +50,7 @@ export function ConfigureStep({ pipeline, mutate, busy, goTo }: StepProps) {
 
   return (
     <div className="animate-fade-in">
-      <SectionCard n={4} title="AI Recommendations" subtitle="Based on your data analysis, here are the best practices for getting data into Databricks" help="You don't need to know these technologies — EasyETL picks the right one, and you can change anything." className="mb-5">
+      <SectionCard icon={<Settings2 />} title="AI Recommendations" subtitle="Based on your data analysis, here are the best practices for getting data into Databricks" help="You don't need to know these technologies — EasyETL picks the right one, and you can change anything." className="mb-5">
         <div className="rounded-2xl border border-slate-200 p-4">
           <div className="flex flex-wrap items-center gap-3">
             <span className="flex size-11 items-center justify-center rounded-xl bg-brand-50 text-brand-600"><Bot className="size-6" /></span>

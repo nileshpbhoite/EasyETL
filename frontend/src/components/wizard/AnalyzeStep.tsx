@@ -1,6 +1,8 @@
 "use client";
 
-import { ArrowRight, Brain, CircleCheck, KeyRound, Link2, RefreshCw, Sparkles, TriangleAlert, Wand } from "lucide-react";
+import { ArrowRight, Brain, ChevronRight, CircleCheck, Columns3, Eye, KeyRound, Layers, Link2, RefreshCw, Rows3, Sparkles, Table2, TriangleAlert, Wand } from "lucide-react";
+import { Gem, MiniStack } from "@/components/art";
+import { Ring, SparkBars } from "@/components/charts/Mini";
 import { useEffect, useRef, useState } from "react";
 import { InsightList } from "@/components/ai/Recommendations";
 import { ProfileView } from "@/components/analyze/ProfileView";
@@ -57,14 +59,25 @@ function typeBreakdown(profiles: Profile[]) {
   return Object.entries(counts).sort((a, b) => b[1] - a[1]);
 }
 
-function Tile({ label, children }: { label: string; children: React.ReactNode }) {
+function Tile({ label, icon, iconClass, children, className }: { label: string; icon?: React.ReactNode; iconClass?: string; children: React.ReactNode; className?: string }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4">
-      <div className="text-xs text-slate-500">{label}</div>
-      <div className="mt-1.5">{children}</div>
+    <div className={cn("glass-inset rounded-2xl p-4", className)}>
+      <div className="flex items-center gap-2 text-[13px] font-medium text-slate-600">
+        {icon && <span className={cn("flex size-7 items-center justify-center rounded-lg [&_svg]:size-4", iconClass)}>{icon}</span>}
+        {label}
+      </div>
+      <div className="mt-3">{children}</div>
     </div>
   );
 }
+
+const DIMENSIONS = [
+  { key: "completeness", label: "Completeness", dot: "bg-emerald-500" },
+  { key: "validity", label: "Validity", dot: "bg-brand-500" },
+  { key: "uniqueness", label: "Uniqueness", dot: "bg-ai-500" },
+  { key: "consistency", label: "Consistency", dot: "bg-amber-400" },
+] as const;
+const ROW_TILES = ["from-ai-400 to-ai-600", "from-emerald-400 to-teal-500", "from-brand-400 to-brand-600", "from-sky-400 to-brand-500", "from-amber-400 to-orange-500", "from-rose-400 to-pink-500"];
 
 type Tab = "overview" | "profile" | "quality" | "relationships" | "insights";
 
@@ -96,26 +109,40 @@ export function AnalyzeStep({ pipeline, mutate, busy, goTo }: StepProps) {
   const names = Object.fromEntries(meta.source.datasets.map((d) => [d.id, d.name.split(" › ").pop() ?? d.name]));
   const profile = meta.analysis.profiles[dsTab];
   const pk = profile?.primary_key_candidates[0];
-  const fileIds = (meta.source.config.file_ids as string[] | undefined) ?? [];
   const pending = meta.recommendations.filter((r) => r.status === "pending" && r.area === "transformation").length;
   const quality = profiles.length ? profiles.reduce((s, p) => s + p.quality.score, 0) / profiles.length : 0;
   const noun = meta.source.category === "file" ? (selected.some((d) => d.kind === "sheet") ? "Sheets" : "Files") : meta.source.category === "database" ? "Tables" : "Objects";
   const topInsights = meta.analysis.insights.slice(0, 8);
+  const sourceFiles = [...new Set(selected.map((d) => d.name.split(" › ")[0]))];
+  const chips = meta.source.category === "file" && sourceFiles.length > 1 ? sourceFiles : selected.map((d) => names[d.id]);
+  const avgDim = (k: (typeof DIMENSIONS)[number]["key"]) => (profiles.length ? profiles.reduce((acc, p) => acc + p.quality[k], 0) / profiles.length : 0);
 
   return (
     <div className="animate-fade-in space-y-5">
-      <SectionCard n={2} title="AI Analysis & Data Profiling" subtitle="We automatically analyze your data and provide insights"
+      <SectionCard icon={<Sparkles />} title="AI Analysis & Data Profiling" subtitle="Automatically analyzed your data and found key insights."
         help="Statistics are calculated from your data. AI interprets them — it never invents numbers."
-        actions={<Button variant="secondary" size="sm" onClick={analyze} loading={busy === "analyze"}><RefreshCw /> Re-analyze</Button>}>
-        <div className="flex flex-wrap items-center gap-4 rounded-xl border border-emerald-100 bg-gradient-to-r from-emerald-50/80 to-white p-4">
-          <FileTypeIcon format={meta.source.category === "file" ? selected[0]?.format : meta.source.category === "api" ? "api" : "table"} size={38} />
-          <div className="min-w-0 flex-1">
-            <div className="text-[15px] font-semibold text-slate-900">{meta.source.category === "file" ? (fileIds.length > 1 ? `${fileIds.length} files` : selected[0]?.name.split(" › ")[0]) : meta.source.name}</div>
-            <div className="text-[13px] text-slate-500">Profiled {timeAgo(meta.analysis.profiled_at)} · {meta.analysis.strategy === "databricks" ? "large-scale profiling on Databricks" : "in-app profiling"}</div>
+        actions={<Button variant="primary" onClick={analyze} loading={busy === "analyze"}><RefreshCw /> Re-analyze</Button>}>
+        <div className="glass-inset flex flex-wrap items-center gap-x-6 gap-y-4 rounded-2xl p-4">
+          <FileTypeIcon format={meta.source.category === "file" ? selected[0]?.format : meta.source.category === "api" ? "api" : "table"} size={42} />
+          <div className="min-w-0">
+            <div className="text-[17px] font-bold text-slate-900">{meta.source.category === "file" ? (sourceFiles.length > 1 ? `${sourceFiles.length} files analyzed` : `${sourceFiles[0] ?? selected[0]?.name} analyzed`) : `${meta.source.name || "Source"} analyzed`}</div>
+            <div className="text-[13px] text-slate-500">Profiled {timeAgo(meta.analysis.profiled_at)} · {meta.analysis.strategy === "databricks" ? "Large-scale profiling on Databricks" : "In-app profiling"}</div>
           </div>
-          <dl className="grid grid-cols-3 gap-x-8 text-sm">
-            <dt className="text-xs text-slate-500">{noun}</dt><dt className="text-xs text-slate-500">Quality today</dt><dt className="text-xs text-slate-500">Total rows</dt>
-            <dd className="font-semibold">{selected.length}</dd><dd className="font-semibold">{quality.toFixed(0)}%</dd><dd className="font-semibold">{fmtNumber(rows)}</dd>
+          <div className="flex min-w-0 flex-1 flex-wrap gap-2">
+            {chips.slice(0, 4).map((c) => (
+              <span key={c} className="flex items-center gap-1.5 rounded-lg bg-white/90 px-2.5 py-1 text-[12px] font-medium text-slate-700 ring-1 ring-slate-200/70">
+                <FileTypeIcon format={meta.source.category === "file" ? selected[0]?.format : "table"} size={13} /> {c}
+              </span>
+            ))}
+            {chips.length > 4 && <span className="rounded-lg bg-white/70 px-2.5 py-1 text-[12px] text-slate-500">+{chips.length - 4} more</span>}
+          </div>
+          <dl className="flex items-center gap-8 border-slate-200/70 pl-2 xl:border-l xl:pl-8">
+            <div><dt className="text-xs text-slate-500">{noun}</dt><dd className="mt-0.5 text-[17px] font-bold text-slate-900">{selected.length}</dd></div>
+            <div><dt className="text-xs text-slate-500">Total rows</dt><dd className="mt-0.5 text-[17px] font-bold text-slate-900">{fmtNumber(rows)}</dd></div>
+            <div className="flex items-center gap-3">
+              <div><dt className="text-xs text-slate-500">Data quality</dt><dd className="mt-0.5 text-[17px] font-bold text-slate-900">{quality.toFixed(0)}%</dd></div>
+              <Ring value={quality} size={44} stroke={6} />
+            </div>
           </dl>
         </div>
 
@@ -125,48 +152,84 @@ export function AnalyzeStep({ pipeline, mutate, busy, goTo }: StepProps) {
         ]} />
 
         {tab === "overview" && (
-          <div className="mt-4 space-y-4">
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-              <Tile label="Rows"><div className="text-2xl font-semibold">{fmtNumber(rows)}</div></Tile>
-              <Tile label="Columns"><div className="text-2xl font-semibold">{cols}</div></Tile>
-              <Tile label="Data types">
-                <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs">
+          <div className="mt-5 space-y-5">
+            <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 2xl:grid-cols-[1fr_1fr_1.1fr_0.85fr_1.5fr]">
+              <Tile icon={<Rows3 />} iconClass="bg-amber-50 text-amber-600" label="Rows">
+                <div className="flex items-end justify-between gap-2">
+                  <div><div className="font-display text-[28px] font-bold leading-none text-slate-900">{fmtNumber(rows)}</div><div className="mt-1.5 text-xs text-slate-500">across {selected.length} {noun.toLowerCase()}</div></div>
+                  {profiles.length > 1 && <SparkBars data={profiles.map((p) => p.row_count)} labels={selected.map((d) => names[d.id])} format={(v) => `${fmtNumber(v)} rows`} tone="green" width={64} height={40} />}
+                </div>
+              </Tile>
+              <Tile icon={<Columns3 />} iconClass="bg-brand-50 text-brand-600" label="Columns">
+                <div className="flex items-end justify-between gap-2">
+                  <div><div className="font-display text-[28px] font-bold leading-none text-slate-900">{cols}</div><div className="mt-1.5 text-xs text-slate-500">{profiles.reduce((s, p) => s + p.columns.filter((c) => c.pii).length, 0)} contain personal data</div></div>
+                  {profiles.length > 1 && <SparkBars data={profiles.map((p) => p.column_count)} labels={selected.map((d) => names[d.id])} format={(v) => `${v} columns`} tone="blue" width={64} height={40} />}
+                </div>
+              </Tile>
+              <Tile label="Data Types">
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[12.5px]">
                   {typeBreakdown(profiles).map(([g, n]) => (
-                    <div key={g} className="flex items-center gap-1.5"><span className={cn("size-2 rounded-full", TYPE_DOT[g])} /><span className="font-semibold tabular-nums">{n}</span><span className="text-slate-500">{g}</span></div>
+                    <div key={g} className="flex items-center gap-1.5"><span className={cn("size-2 rounded-full", TYPE_DOT[g])} /><span className="font-semibold tabular-nums text-slate-800">{n}</span><span className="text-slate-500">{g}</span></div>
                   ))}
                 </div>
               </Tile>
-              <Tile label={noun}><div className="text-2xl font-semibold">{selected.length} detected</div></Tile>
+              <Tile icon={<Layers />} iconClass="bg-ai-50 text-ai-600" label={`${noun} Detected`}>
+                <div className="flex items-end justify-between">
+                  <div className="font-display text-[28px] font-bold leading-none text-slate-900">{selected.length}</div>
+                  <MiniStack className="-mb-2 -mr-1 h-[52px] w-[70px]" />
+                </div>
+              </Tile>
+              <Tile label="Data Quality Score" className="col-span-2 lg:col-span-1">
+                <div className="flex items-center gap-4">
+                  <Ring value={quality} size={72} stroke={8} label={<span className="text-[15px] font-bold text-slate-900">{quality.toFixed(0)}%</span>} />
+                  <ul className="min-w-0 flex-1 space-y-1 text-[12px]">
+                    {DIMENSIONS.map((d) => (
+                      <li key={d.key} className="flex items-center gap-1.5"><span className={cn("size-2 rounded-full", d.dot)} /><span className="flex-1 text-slate-500">{d.label}</span><span className="font-semibold tabular-nums text-slate-800">{avgDim(d.key).toFixed(0)}%</span></li>
+                    ))}
+                  </ul>
+                </div>
+              </Tile>
             </div>
-            <div className="grid gap-4 lg:grid-cols-2">
-              <div className="rounded-xl border border-slate-200">
-                <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-                  <div className="text-[14px] font-semibold">{noun} Found</div>
-                  <Button size="sm" variant="ghost" onClick={() => setTab("profile")}>Preview profile</Button>
+
+            <div className="grid gap-5 xl:grid-cols-2">
+              <div className="glass-inset overflow-hidden rounded-2xl">
+                <div className="flex items-center justify-between px-5 py-4">
+                  <div className="flex items-center gap-2.5 text-[16px] font-bold text-slate-900"><span className="flex size-8 items-center justify-center rounded-xl bg-ai-50 text-ai-600"><Layers className="size-4" /></span>{noun} Found</div>
+                  <Button size="sm" variant="secondary" onClick={() => setTab("profile")}><Eye /> Preview data</Button>
                 </div>
-                <div className="divide-y divide-slate-100">
-                  {selected.map((d) => {
-                    const p = meta.analysis.profiles[d.id];
-                    return (
-                      <button key={d.id} onClick={() => { setDsTab(d.id); setTab("profile"); }} className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-slate-50">
-                        <span className="flex size-[18px] items-center justify-center rounded bg-brand-600 text-white"><CircleCheck className="size-3" /></span>
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-[13.5px] font-semibold text-slate-900">{names[d.id]}</div>
-                          <div className="text-xs text-slate-500">{fmtNumber(p?.row_count)} rows</div>
-                        </div>
-                        <span className="w-24 text-xs text-slate-500">{p?.column_count} columns</span>
-                        <span className={cn("w-12 text-right text-xs font-semibold", (p?.quality.score ?? 0) >= 90 ? "text-emerald-600" : (p?.quality.score ?? 0) >= 75 ? "text-amber-600" : "text-rose-600")}>{p?.quality.score.toFixed(0)}%</span>
-                      </button>
-                    );
-                  })}
-                </div>
+                <table className="w-full text-sm">
+                  <thead><tr className="border-y border-slate-200/60 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400"><th className="px-5 py-2">{noun.replace(/s$/, "")} name</th><th className="px-3 py-2 text-right">Rows</th><th className="px-3 py-2 text-right">Columns</th><th className="px-3 py-2">Data quality</th><th className="w-8" /></tr></thead>
+                  <tbody>
+                    {selected.map((d, i) => {
+                      const p = meta.analysis.profiles[d.id];
+                      const q = p?.quality.score ?? 0;
+                      return (
+                        <tr key={d.id} onClick={() => { setDsTab(d.id); setTab("profile"); }} className="cursor-pointer border-b border-slate-200/40 last:border-0 hover:bg-white/70">
+                          <td className="px-5 py-3"><span className="flex items-center gap-3"><span className={cn("flex size-8 items-center justify-center rounded-lg bg-gradient-to-br text-white", ROW_TILES[i % ROW_TILES.length])}><Table2 className="size-4" /></span><span className="font-semibold text-slate-900">{names[d.id]}</span></span></td>
+                          <td className="px-3 py-3 text-right tabular-nums text-slate-700">{fmtNumber(p?.row_count)}</td>
+                          <td className="px-3 py-3 text-right tabular-nums text-slate-700">{p?.column_count}</td>
+                          <td className="px-3 py-3">
+                            <span className="flex items-center gap-2.5">
+                              <span className={cn("w-9 text-right text-[13px] font-bold tabular-nums", q >= 90 ? "text-emerald-600" : q >= 75 ? "text-amber-500" : "text-rose-500")}>{q.toFixed(0)}%</span>
+                              <span className="h-1.5 w-20 overflow-hidden rounded-full bg-slate-200/70"><span className={cn("block h-full rounded-full", q >= 90 ? "bg-emerald-500" : q >= 75 ? "bg-amber-400" : "bg-rose-500")} style={{ width: `${q}%` }} /></span>
+                            </span>
+                          </td>
+                          <td className="pr-4"><ChevronRight className="size-4 text-slate-400" /></td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-              <div className="rounded-xl border border-ai-100 ai-surface">
-                <div className="flex items-center gap-2.5 px-4 pt-3.5">
-                  <span className="flex size-7 items-center justify-center rounded-lg bg-gradient-to-br from-ai-500 to-brand-500 text-white"><Sparkles className="size-4" /></span>
-                  <div><div className="text-[14px] font-semibold text-slate-900">AI Insights</div><div className="text-[11.5px] text-slate-500">Based on automatic analysis</div></div>
+              <div className="glass-inset rounded-2xl">
+                <div className="flex items-center justify-between px-5 pt-4">
+                  <div className="flex items-center gap-3">
+                    <span className="icon-tile flex size-10 items-center justify-center rounded-xl text-white"><Sparkles className="size-5" /></span>
+                    <div><div className="text-[16px] font-bold text-slate-900">AI Insights</div><div className="text-[12px] text-slate-500">Based on automatic analysis</div></div>
+                  </div>
+                  <button onClick={() => setTab("insights")} className="text-[13px] font-semibold text-brand-600 hover:text-brand-700">View All ({meta.analysis.insights.length})</button>
                 </div>
-                <ul className="space-y-2 px-4 py-3">
+                <ul className="space-y-2.5 px-5 py-4">
                   {topInsights.map((i) => (
                     <li key={i.id} className="flex gap-2.5 text-[13px] text-slate-700">
                       {i.severity === "warning" || i.severity === "critical" ? <TriangleAlert className="mt-0.5 size-4 shrink-0 text-amber-500" /> : <CircleCheck className="mt-0.5 size-4 shrink-0 text-emerald-500" />}
@@ -174,21 +237,8 @@ export function AnalyzeStep({ pipeline, mutate, busy, goTo }: StepProps) {
                     </li>
                   ))}
                 </ul>
-                <div className="border-t border-ai-100 px-4 py-2.5 text-center">
-                  <button onClick={() => setTab("insights")} className="inline-flex items-center gap-1 text-[13px] font-medium text-brand-600 hover:underline">View Detailed Insights <ArrowRight className="size-3.5" /></button>
-                </div>
               </div>
             </div>
-            {pending > 0 && (
-              <div className="flex flex-wrap items-center gap-4 rounded-xl border border-brand-100 bg-gradient-to-r from-brand-50 to-white p-4">
-                <span className="flex size-10 items-center justify-center rounded-xl bg-brand-600 text-lg font-semibold text-white">{pending}</span>
-                <div className="flex-1">
-                  <div className="text-[14px] font-semibold text-slate-900">{pending} transformation recommendations are ready</div>
-                  <div className="text-[13px] text-slate-500">Review, preview and apply them in the Transformation Studio.</div>
-                </div>
-                <Button variant="primary" onClick={() => goTo("transform")}><Wand /> Open Transformation Studio</Button>
-              </div>
-            )}
           </div>
         )}
 
@@ -275,8 +325,14 @@ export function AnalyzeStep({ pipeline, mutate, busy, goTo }: StepProps) {
           </div>
         )}
       </SectionCard>
-      <WizardFooter onBack={() => goTo("source")} note={`${meta.transformations.length} transformation steps in your pipeline`}
-        primary={<NextButton onClick={() => goTo("transform")}>Continue to Transform</NextButton>} />
+      <WizardFooter onBack={() => goTo("source")}
+        note={pending > 0 ? (
+          <span className="flex items-center gap-3">
+            <Gem size={40} />
+            <span><span className="block text-[14.5px] font-bold text-slate-900">{pending} transformation recommendation{pending !== 1 ? "s are" : " is"} ready</span><span className="block text-[12.5px] text-slate-500">Review, preview and apply them in the Transformation Studio.</span></span>
+          </span>
+        ) : `${meta.transformations.length} transformation steps in your pipeline`}
+        primary={<NextButton onClick={() => goTo("transform")}><Wand /> {pending > 0 ? "Open Transformation Studio" : "Continue to Transform"}</NextButton>} />
     </div>
   );
 }

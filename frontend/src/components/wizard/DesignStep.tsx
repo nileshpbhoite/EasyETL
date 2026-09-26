@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDown, ArrowRight, KeyRound, RefreshCw, Sparkles } from "lucide-react";
+import { ArrowDown, ArrowRight, KeyRound, RefreshCw, Sparkles, Layers } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { Architecture } from "@/components/lakehouse/Architecture";
@@ -77,7 +77,7 @@ export function DesignStep({ pipeline, mutate, busy, goTo }: StepProps) {
     <div className="animate-fade-in">
       <PillTabs value={tab} onChange={setTab} className="mb-4" tabs={[{ value: "lakehouse", label: "Lakehouse" }, { value: "governance", label: "Governance" }, { value: "quality", label: "Data Quality" }]} />
       {tab === "lakehouse" && (
-        <SectionCard n={5} title="Design Lakehouse" subtitle="Choose architecture and let AI optimize it" help="Bronze keeps raw data, Silver holds cleaned tables, Gold holds business-ready models."
+        <SectionCard icon={<Layers />} title="Design Lakehouse" subtitle="Choose architecture and let AI optimize it" help="Bronze keeps raw data, Silver holds cleaned tables, Gold holds business-ready models."
           actions={<Button variant="secondary" size="sm" onClick={() => mutate("regen", () => api.post<Pipeline>(`/api/pipelines/${pipeline.id}/lakehouse/regenerate`), { success: "Design regenerated" })} loading={busy === "regen"}><RefreshCw /> Regenerate with AI</Button>}>
           <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-50 p-1">
             {([["simple", "Simple Mode (Recommended)"], ["advanced", "Advanced Mode"], ["custom", "Custom Design"]] as const).map(([v, l]) => (

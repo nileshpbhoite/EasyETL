@@ -24,7 +24,7 @@ export const WizardStepContext = createContext<{ index: number; total: number; l
 export function WizardFooter({ onBack, backLabel = "Back", primary, secondary, note }: { onBack?: () => void; backLabel?: string; primary?: ReactNode; secondary?: ReactNode; note?: ReactNode }) {
   const ctx = useContext(WizardStepContext);
   return (
-    <div className="sticky bottom-3 z-10 mt-6 flex items-center gap-3 rounded-2xl border border-slate-200/70 bg-white/90 px-3 py-2.5 shadow-[0_12px_32px_-12px_rgb(15_23_42_/_0.25)] backdrop-blur-md">
+    <div className="glass sticky bottom-4 z-10 mt-6 flex items-center gap-3 rounded-[20px] bg-white/90 px-3 py-2.5 shadow-lift">
       {onBack && (
         <Button variant="ghost" onClick={onBack}>
           <ArrowLeft /> {backLabel}
@@ -38,7 +38,7 @@ export function WizardFooter({ onBack, backLabel = "Back", primary, secondary, n
           <span className="whitespace-nowrap text-[12.5px] font-medium text-slate-500">Step {ctx.index + 1} of {ctx.total}</span>
         </div>
       )}
-      {note && <div className="truncate text-sm text-slate-500">{note}</div>}
+      {note && <div className="min-w-0 text-sm text-slate-500">{note}</div>}
       <div className="ml-auto flex items-center gap-2">
         {secondary}
         {primary}
@@ -48,8 +48,9 @@ export function WizardFooter({ onBack, backLabel = "Back", primary, secondary, n
 }
 
 /** Card with the numbered header used throughout the wizard ("1  Select Source"). */
-export function SectionCard({ n, title, subtitle, actions, children, className, bodyClassName, help }: {
+export function SectionCard({ n, icon, title, subtitle, actions, children, className, bodyClassName, help }: {
   n?: number | string;
+  icon?: ReactNode;
   title: ReactNode;
   subtitle?: ReactNode;
   actions?: ReactNode;
@@ -59,17 +60,17 @@ export function SectionCard({ n, title, subtitle, actions, children, className, 
   help?: ReactNode;
 }) {
   return (
-    <section className={cn("rounded-2xl border border-slate-200/60 bg-white shadow-card", className)}>
-      <header className="flex items-start gap-3 px-6 pb-4 pt-5">
-        {n !== undefined && <span className="step-badge font-display flex size-9 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white">{n}</span>}
+    <section className={cn("glass rounded-[22px]", className)}>
+      <header className="flex items-center gap-4 px-6 pb-4 pt-5">
+        {(icon || n !== undefined) && <span className="icon-tile font-display flex size-12 shrink-0 items-center justify-center rounded-2xl text-lg font-bold text-white [&_svg]:size-6">{icon ?? n}</span>}
         <div className="min-w-0 flex-1">
-          <h3 className="text-[18px] font-bold leading-tight text-slate-900">{title}</h3>
-          {subtitle && <p className="mt-1 text-[13.5px] leading-snug text-slate-500">{subtitle}</p>}
+          <h3 className="text-[20px] font-bold leading-tight text-slate-900">{title}</h3>
+          {subtitle && <p className="mt-1 text-[14px] leading-snug text-slate-500">{subtitle}</p>}
         </div>
         {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
         {help && (
           <Tooltip content={help}>
-            <button type="button" className="mt-0.5 text-slate-400 hover:text-slate-600" aria-label="Help"><CircleHelp className="size-[18px]" /></button>
+            <button type="button" className="text-slate-400 hover:text-slate-600" aria-label="Help"><CircleHelp className="size-5" /></button>
           </Tooltip>
         )}
       </header>
@@ -81,13 +82,13 @@ export function SectionCard({ n, title, subtitle, actions, children, className, 
 /** Underlined text tabs used inside cards. */
 export function LineTabs<T extends string>({ value, onChange, tabs, className }: { value: T; onChange: (v: T) => void; tabs: { value: T; label: ReactNode }[]; className?: string }) {
   return (
-    <div className={cn("flex gap-1 overflow-x-auto border-b border-slate-200 scrollbar-thin", className)}>
+    <div className={cn("flex gap-2 overflow-x-auto border-b border-slate-200/70 scrollbar-thin", className)}>
       {tabs.map((t) => (
         <button
           key={t.value}
           type="button"
           onClick={() => onChange(t.value)}
-          className={cn("-mb-px shrink-0 whitespace-nowrap border-b-2 px-3.5 py-2.5 text-[13.5px] font-semibold transition-colors", value === t.value ? "border-brand-600 text-brand-700" : "border-transparent text-slate-500 hover:text-slate-800")}
+          className={cn("-mb-px shrink-0 whitespace-nowrap border-b-[2.5px] px-4 py-3 text-[14px] font-semibold transition-colors", value === t.value ? "border-brand-500 text-brand-600" : "border-transparent text-slate-500 hover:text-slate-800")}
         >
           {t.label}
         </button>
@@ -105,7 +106,7 @@ export function PillTabs<T extends string>({ value, onChange, tabs, className }:
           key={t.value}
           type="button"
           onClick={() => onChange(t.value)}
-          className={cn("rounded-xl px-3.5 py-2 text-[13px] font-semibold transition-all", value === t.value ? "bg-brand-600 text-white shadow-[0_6px_14px_-6px_rgb(38_89_235)]" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900")}
+          className={cn("rounded-xl px-3.5 py-2 text-[13px] font-semibold transition-all", value === t.value ? "gradient-primary text-white shadow-glow" : "text-slate-600 hover:bg-white/80 hover:text-slate-900")}
         >
           {t.label}
         </button>

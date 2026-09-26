@@ -99,7 +99,7 @@ export function DeployStep({ pipeline, mutate, busy, goTo }: StepProps) {
     <div className="animate-fade-in">
       <div className="grid gap-6 xl:grid-cols-3">
         <div className="space-y-6 xl:col-span-2">
-          <SectionCard n={7} title="Create & Deploy" subtitle="EasyETL generates and deploys everything — Unity Catalog, Lakeflow pipeline, jobs, governance — from your validated metadata." bodyClassName="p-0">
+          <SectionCard icon={<Rocket />} title="Create & Deploy" subtitle="EasyETL generates and deploys everything — Unity Catalog, Lakeflow pipeline, jobs, governance — from your validated metadata." bodyClassName="p-0">
             <div className={cn("relative overflow-hidden border-b px-6 py-7", done ? "border-emerald-100 bg-emerald-50/70" : "border-brand-100 bg-gradient-to-br from-brand-50 to-white")}>
               <div className="relative flex flex-wrap items-center gap-6">
                 <div className={cn("flex size-14 items-center justify-center rounded-2xl text-white shadow-lg", done ? "bg-emerald-500" : "gradient-primary", deploying && "animate-pulse")}>

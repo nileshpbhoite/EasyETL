@@ -17,10 +17,11 @@ const buttonVariants = cva(
     variants: {
       variant: {
         primary: "gradient-primary text-white shadow-glow hover:brightness-110 active:brightness-95",
-        secondary: "bg-white text-slate-700 border border-slate-200 shadow-sm hover:bg-slate-50 hover:border-slate-300 hover:text-slate-900",
-        ghost: "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+        secondary: "bg-white/80 text-slate-700 border border-white shadow-[0_4px_14px_-8px_rgb(76_70_180_/_0.35)] ring-1 ring-slate-200/70 backdrop-blur hover:bg-white hover:text-slate-900",
+        ghost: "text-slate-600 hover:bg-white/70 hover:text-slate-900",
         ai: "bg-ai-600 text-white hover:bg-ai-700 shadow-[0_8px_24px_-10px_rgb(124_58_237_/_0.7)]",
-        aiSoft: "bg-ai-50 text-ai-700 border border-ai-200 hover:bg-ai-100",
+        aiSoft: "bg-ai-50/80 text-ai-700 border border-ai-200 hover:bg-ai-100",
+        soft: "bg-brand-50/90 text-brand-700 ring-1 ring-brand-100 hover:bg-brand-100",
         danger: "bg-rose-600 text-white hover:bg-rose-700",
         dangerSoft: "text-rose-600 hover:bg-rose-50",
         databricks: "bg-dbx-500 text-white hover:bg-dbx-600 shadow-[0_8px_24px_-10px_rgb(255_54_33_/_0.7)]",
@@ -46,16 +47,16 @@ Button.displayName = "Button";
 
 // ------------------------------------------------------------------ Card
 export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("rounded-2xl border border-slate-200/60 bg-white shadow-card", className)} {...props} />;
+  return <div className={cn("glass rounded-[20px]", className)} {...props} />;
 }
 
 export function CardHeader({ title, description, icon, actions, className }: { title: React.ReactNode; description?: React.ReactNode; icon?: React.ReactNode; actions?: React.ReactNode; className?: string }) {
   return (
-    <div className={cn("flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4", className)}>
+    <div className={cn("flex items-start justify-between gap-4 border-b border-slate-200/50 px-5 py-4", className)}>
       <div className="flex items-start gap-3 min-w-0">
-        {icon && <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600 [&_svg]:size-4">{icon}</div>}
+        {icon && <div className="icon-tile mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl text-white [&_svg]:size-[18px]">{icon}</div>}
         <div className="min-w-0">
-          <h3 className="font-semibold text-slate-900">{title}</h3>
+          <h3 className="text-[16px] font-bold text-slate-900">{title}</h3>
           {description && <p className="mt-0.5 text-sm text-slate-500">{description}</p>}
         </div>
       </div>
@@ -65,15 +66,15 @@ export function CardHeader({ title, description, icon, actions, className }: { t
 }
 
 // ------------------------------------------------------------------ Badge
-const badgeVariants = cva("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium [&_svg]:size-3", {
+const badgeVariants = cva("inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11.5px] font-semibold [&_svg]:size-3", {
   variants: {
     tone: {
       slate: "bg-slate-100 text-slate-600",
-      brand: "bg-brand-50 text-brand-700",
+      brand: "bg-brand-50 text-brand-700 ring-1 ring-brand-100",
       ai: "bg-ai-50 text-ai-700 ring-1 ring-inset ring-ai-200",
-      green: "bg-emerald-50 text-emerald-700",
-      amber: "bg-amber-50 text-amber-700",
-      red: "bg-rose-50 text-rose-700",
+      green: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100",
+      amber: "bg-amber-50 text-amber-700 ring-1 ring-amber-100",
+      red: "bg-rose-50 text-rose-700 ring-1 ring-rose-100",
       sky: "bg-sky-50 text-sky-700",
       dbx: "bg-orange-50 text-dbx-600",
       bronze: "bg-orange-100 text-orange-800",
@@ -122,7 +123,7 @@ export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttribute
   <input
     ref={ref}
     className={cn(
-      "h-10 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-800 shadow-sm placeholder:text-slate-400 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-slate-50",
+      "h-10 w-full rounded-xl border border-slate-200/80 bg-white/85 px-3.5 text-sm text-slate-800 shadow-sm placeholder:text-slate-400 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-slate-50",
       className,
     )}
     {...props}
@@ -153,7 +154,7 @@ export function Select({ value, onChange, options, placeholder, className, disab
         value={value ?? ""}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
-        className="h-9 w-full appearance-none rounded-lg border border-slate-200 bg-white pl-3 pr-8 text-sm text-slate-800 shadow-sm focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-slate-50"
+        className="h-10 w-full appearance-none rounded-xl border border-slate-200/80 bg-white/85 pl-3.5 pr-8 text-sm text-slate-800 shadow-sm focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-slate-50"
       >
         {placeholder !== undefined && <option value="">{placeholder}</option>}
         {options.map((o) => (
@@ -240,7 +241,7 @@ export function Checkbox({ checked, onChange, disabled, className, indeterminate
 
 export function Segmented<T extends string>({ value, onChange, options, className, size = "md" }: { value: T; onChange: (v: T) => void; options: { value: T; label: React.ReactNode; icon?: React.ReactNode }[]; className?: string; size?: "sm" | "md" }) {
   return (
-    <div className={cn("inline-flex rounded-xl bg-slate-100/80 p-1", className)}>
+    <div className={cn("inline-flex rounded-xl bg-white/60 p-1 ring-1 ring-slate-200/60", className)}>
       {options.map((o) => (
         <button
           key={o.value}
@@ -249,7 +250,7 @@ export function Segmented<T extends string>({ value, onChange, options, classNam
           className={cn(
             "flex items-center gap-1.5 rounded-lg font-medium transition-all [&_svg]:size-3.5",
             size === "sm" ? "px-2.5 py-1 text-xs" : "px-3 py-1.5 text-sm",
-            value === o.value ? "bg-white text-brand-700 shadow-sm ring-1 ring-slate-200/70" : "text-slate-500 hover:text-slate-700",
+            value === o.value ? "bg-white text-brand-700 shadow-[0_4px_12px_-6px_rgb(76_70_180_/_0.5)] ring-1 ring-brand-100" : "text-slate-500 hover:text-slate-700",
           )}
         >
           {o.icon}
@@ -292,8 +293,8 @@ export function Dialog({ open, onOpenChange, title, description, children, foote
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-navy-950/40 backdrop-blur-[2px] animate-fade-in" />
-        <DialogPrimitive.Content className={cn("fixed left-1/2 top-1/2 z-50 flex max-h-[88vh] w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-2xl bg-white shadow-2xl animate-slide-up", w)}>
+        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-slate-900/25 backdrop-blur-sm animate-fade-in" />
+        <DialogPrimitive.Content className={cn("fixed left-1/2 top-1/2 z-50 flex max-h-[88vh] w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-[24px] border border-white bg-white/95 shadow-2xl backdrop-blur-xl animate-slide-up", w)}>
           <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-6 py-4">
             <div>
               <DialogPrimitive.Title className="text-base font-semibold text-slate-900">{title}</DialogPrimitive.Title>
@@ -350,7 +351,7 @@ export function Tooltip({ content, children, side = "top" }: { content: React.Re
       <TooltipPrimitive.Root>
         <TooltipPrimitive.Trigger asChild>{children}</TooltipPrimitive.Trigger>
         <TooltipPrimitive.Portal>
-          <TooltipPrimitive.Content side={side} sideOffset={6} className="z-[60] max-w-xs rounded-lg bg-navy-900 px-3 py-2 text-xs leading-relaxed text-white shadow-lg animate-fade-in">
+          <TooltipPrimitive.Content side={side} sideOffset={6} className="z-[60] max-w-xs rounded-xl bg-slate-900/90 px-3 py-2 text-xs leading-relaxed text-white shadow-lg backdrop-blur animate-fade-in">
             {content}
           </TooltipPrimitive.Content>
         </TooltipPrimitive.Portal>

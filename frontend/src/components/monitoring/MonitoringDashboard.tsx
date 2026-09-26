@@ -190,7 +190,7 @@ export function MonitoringDashboard({ pipelineId, embedded }: { pipelineId: stri
 
   return (
     <SectionCard
-      n={embedded ? 8 : undefined}
+      icon={<Activity />}
       title={embedded ? "Pipeline Deployed" : data.pipeline.name}
       subtitle="Live health, runs, data volume, quality and AI anomaly detection"
       actions={actions}

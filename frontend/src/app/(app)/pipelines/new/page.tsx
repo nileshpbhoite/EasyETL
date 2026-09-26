@@ -46,9 +46,9 @@ function NewPipeline() {
   };
 
   const options = [
-    { id: "file" as const, icon: FileUp, title: "Upload a file", desc: "Excel, CSV, JSON, XML, Parquet, Avro or ZIP" },
-    { id: "connect" as const, icon: Plug, title: "Connect a system", desc: "Salesforce, SAP, SQL Server, REST API, S3…" },
-    { id: "template" as const, icon: LayoutTemplate, title: "Start from a template", desc: "Reuse a proven configuration" },
+    { id: "file" as const, icon: FileUp, title: "Upload a file", desc: "Excel, CSV, JSON, XML, Parquet, Avro or ZIP", tile: "from-brand-400 to-ai-600" },
+    { id: "connect" as const, icon: Plug, title: "Connect a system", desc: "Salesforce, SAP, SQL Server, REST API, S3…", tile: "from-sky-400 to-brand-500" },
+    { id: "template" as const, icon: LayoutTemplate, title: "Start from a template", desc: "Reuse a proven configuration", tile: "from-emerald-400 to-teal-500" },
   ];
 
   return (
@@ -66,9 +66,9 @@ function NewPipeline() {
             <button
               key={o.id}
               onClick={() => setStart(o.id)}
-              className={cn("rounded-xl border-2 p-4 text-left transition-all", start === o.id ? "border-brand-500 bg-brand-50/60 shadow-card" : "border-slate-200 hover:border-slate-300")}
+              className={cn("rounded-2xl border-2 p-4 text-left transition-all", start === o.id ? "border-brand-400 bg-white shadow-card" : "border-white bg-white/60 hover:border-brand-200")}
             >
-              <o.icon className={cn("size-5", start === o.id ? "text-brand-600" : "text-slate-400")} />
+              <span className={cn("flex size-11 items-center justify-center rounded-2xl bg-gradient-to-br text-white shadow-md", o.tile)}><o.icon className="size-5" /></span>
               <div className="mt-3 font-semibold text-slate-900">{o.title}</div>
               <div className="text-sm text-slate-500">{o.desc}</div>
             </button>

@@ -165,7 +165,7 @@ export function ExpressionBuilder({ value, onChange, columns, lib }: { value: Ex
         ))}
       </div>
       <NodeEditor node={value ?? blank("op", columns)} onChange={onChange} columns={columns} lib={lib} depth={0} />
-      <div className="rounded-md bg-navy-900 px-3 py-2 font-mono text-[11px] text-brand-100">= {describeExpr(value, lib.functions)}</div>
+      <div className="rounded-lg bg-brand-50 px-3 py-2 font-mono text-[11px] text-brand-800 ring-1 ring-brand-100">= {describeExpr(value, lib.functions)}</div>
     </div>
   );
 }

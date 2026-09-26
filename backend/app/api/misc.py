@@ -144,6 +144,68 @@ def _col_desc(c: dict) -> str:
 
 
 # ------------------------------------------------------------------ dashboard
+def _trend(series: list[float], current: float, previous: float, better: str, unit: str = "pct") -> dict:
+    """7 daily values for the mini chart plus the change vs the previous 7 days."""
+    if unit == "pct" and not previous:
+        unit, change = "abs", current - previous
+    elif unit == "pct":
+        change = (current - previous) / previous * 100
+    else:
+        change = current - previous
+    return {"series": [round(v, 2) for v in series], "change": round(change, 1), "unit": unit, "better": better}
+
+
+def _trends(pipelines: list[tuple[Pipeline, PipelineMetadata, list]], sources: dict, now: datetime) -> dict:
+    """Rolling 24h buckets for the last 7 days; changes compare daily averages this week vs the week before,
+    counting only days a pipeline actually has run history for (so short histories don't look like growth)."""
+    day = timedelta(days=1)
+    edges = [now - day * (7 - i) for i in range(8)]
+    week_ago, two_weeks = now - 7 * day, now - 14 * day
+
+    series = {k: [0.0] * 7 for k in ("records", "quality", "failures", "cost")}
+    q_counts = [0] * 7
+    rate = {k: [0.0, 0.0] for k in ("records", "failures", "cost")}  # [this week, previous week] per-day rates
+    q_win = [[], []]
+    deployed_at = []
+    for row, meta, runs in pipelines:
+        if meta.deployment.status != "deployed" or not runs:
+            continue
+        deployed_at.append(monitoring._utc(datetime.fromisoformat(meta.deployment.deployed_at)) if meta.deployment.deployed_at else monitoring._utc(row.created_at))
+        first = monitoring._utc(runs[0].started_at)
+        covered = [max((now - max(first, week_ago)).total_seconds() / 86400, 0), max((week_ago - max(first, two_weeks)).total_seconds() / 86400, 0)]
+        sums = {k: [0.0, 0.0] for k in rate}
+        for r in runs:
+            t = monitoring._utc(r.started_at)
+            vals = {"records": r.records_ingested, "failures": 1 if r.status == "failed" else 0, "cost": r.cost_usd}
+            if t >= edges[0]:
+                i = min(int((t - edges[0]) / day), 6)
+                for k, v in vals.items():
+                    series[k][i] += v
+                series["quality"][i] += r.quality_score
+                q_counts[i] += 1
+            w = 0 if t >= week_ago else 1 if t >= two_weeks else None
+            if w is not None:
+                for k, v in vals.items():
+                    sums[k][w] += v
+                q_win[w].append(r.quality_score)
+        for k in rate:
+            for w in (0, 1):
+                if covered[w] >= 1:
+                    rate[k][w] += sums[k][w] / covered[w]
+    series["quality"] = [q / n if n else 0 for q, n in zip(series["quality"], q_counts)]
+    avg = lambda xs: sum(xs) / len(xs) if xs else 0  # noqa: E731
+    src_times = list(sources.values())
+    cumulative = lambda times: [sum(1 for t in times if t < e) for e in edges[1:]]  # noqa: E731
+    return {
+        "active_pipelines": _trend(cumulative(deployed_at), len(deployed_at), sum(1 for t in deployed_at if t < week_ago), "up"),
+        "data_sources": _trend(cumulative(src_times), len(src_times), sum(1 for t in src_times if t < week_ago), "up"),
+        "records": _trend(series["records"], *rate["records"], "up"),
+        "quality": _trend(series["quality"], avg(q_win[0]), avg(q_win[1]), "up", unit="pts"),
+        "failures": _trend(series["failures"], *rate["failures"], "down"),
+        "cost": _trend(series["cost"], *rate["cost"], "down"),
+    }
+
+
 @router.get("/dashboard")
 def dashboard(db: DB, user: User):
     rows = db.scalars(select(Pipeline).where(Pipeline.tenant_id == user.tenant_id).order_by(Pipeline.updated_at.desc())).all()
@@ -154,13 +216,16 @@ def dashboard(db: DB, user: User):
     cost = 0.0
     recent = []
     insights = []
-    sources = set()
+    sources: dict = {}
+    trend_input = []
     for row in rows:
         meta = PipelineMetadata(**row.metadata_doc)
         if meta.source.connector:
-            sources.add((meta.source.connector, meta.source.connection_id or row.id))
+            key = (meta.source.connector, meta.source.connection_id or row.id)
+            sources[key] = min(sources.get(key, monitoring._utc(row.created_at)), monitoring._utc(row.created_at))
         monitoring.ensure_runs(db, row, meta)
-        runs = monitoring.runs_for(db, row.id, limit=200)
+        runs = monitoring.runs_for(db, row.id, limit=24 * 15)
+        trend_input.append((row, meta, runs))
         summary = monitoring.summary(meta, row, runs) if runs else {}
         if meta.deployment.status == "deployed":
             if summary.get("status") == "failed":
@@ -194,6 +259,7 @@ def dashboard(db: DB, user: User):
         "metrics": {"active_pipelines": active, "total_pipelines": len(rows), "data_sources": max(len(sources), n_conn), "records_24h": records_24h,
                     "quality_score": round(sum(qualities) / len(qualities), 1) if qualities else None, "failed_pipelines": failed,
                     "freshness_minutes": round(max(freshness), 0) if freshness else None, "estimated_monthly_cost": round(cost, 2)},
+        "trends": _trends(trend_input, sources, now),
         "recent_pipelines": recent[:8], "insights": insights[:8], "generated_at": now.isoformat(),
     }
 

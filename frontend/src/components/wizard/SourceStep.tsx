@@ -115,7 +115,7 @@ export function SourceStep({ pipeline, mutate, busy, goTo }: StepProps) {
     const rows = src.datasets.filter((d) => d.name.toLowerCase().includes(q.toLowerCase()));
     return (
       <div className="animate-fade-in space-y-5">
-        <SectionCard n={1} title="Select Source" subtitle="Your source is connected — choose what to bring into the Lakehouse" help="EasyETL detected the structure automatically. Unselected items are ignored."
+        <SectionCard icon={<Plug />} title="Select Source" subtitle="Your source is connected — choose what to bring into the Lakehouse" help="EasyETL detected the structure automatically. Unselected items are ignored."
           actions={<Button variant="secondary" size="sm" onClick={() => setChanging(true)}><RefreshCw /> Add or change source</Button>}>
           <div className="flex flex-wrap items-center gap-4 rounded-xl border border-emerald-100 bg-gradient-to-r from-emerald-50/80 to-white p-4">
             {src.category === "file" ? <FileTypeIcon format={firstFile?.detection.format ?? src.datasets[0]?.format} size={38} /> : <div className="flex size-11 items-center justify-center rounded-xl bg-emerald-500 text-white"><Plug className="size-5" /></div>}
@@ -175,7 +175,7 @@ export function SourceStep({ pipeline, mutate, busy, goTo }: StepProps) {
   return (
     <div className="animate-fade-in">
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
-        <SectionCard n={1} title="Select Source" subtitle="Connect any source or upload a file" help="Files are detected automatically: format, encoding, sheets, nested structures and record counts.">
+        <SectionCard icon={<Plug />} title="Select Source" subtitle="Connect any source or upload a file" help="Files are detected automatically: format, encoding, sheets, nested structures and record counts.">
           <LineTabs value={tab} onChange={(v) => { setTab(v); setSelected(null); setShowAll(false); }} tabs={TABS} className="mb-4" />
           {(tab === "all" || tab === "file") && (
             <>

@@ -4,7 +4,7 @@ export const STEPS: { id: Step; label: string; hint: string }[] = [
   { id: "analyze", label: "Analyze", hint: "Profile & insights" },
   { id: "transform", label: "Transform", hint: "Cleanse & enrich" },
   { id: "configure", label: "Configure", hint: "Ingestion & settings" },
-  { id: "design", label: "Design", hint: "Lakehouse & governance" },
+  { id: "design", label: "Design", hint: "Lakehouse & model" },
   { id: "review", label: "Review", hint: "AI recommendations" },
   { id: "deploy", label: "Deploy", hint: "Create & deploy" },
   { id: "monitor", label: "Monitor", hint: "Health & alerts" },

@@ -1,5 +1,7 @@
 "use client";
 
+import { FlowArt } from "@/components/art";
+
 import { Activity } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -20,9 +22,10 @@ function MonitoringInner() {
     if (!params.get("pipeline") && deployed[0]) router.replace(`/monitoring?pipeline=${deployed[0].id}`);
   }, [deployed, params, router]);
   return (
-    <div className="mx-auto max-w-[1600px] px-6 py-8 md:px-8">
-      <h1 className="text-2xl font-semibold tracking-tight">Monitoring</h1>
-      <p className="mt-1 text-sm text-slate-500">Run health, freshness, quality and cost — with AI watching for anomalies continuously.</p>
+    <div className="mx-auto max-w-[1600px] relative px-6 pb-10 pt-2 md:px-8">
+      <FlowArt className="pointer-events-none absolute -top-4 right-8 hidden h-[130px] w-[260px] xl:block" />
+      <h1 className="text-[32px] font-bold leading-tight text-slate-900">Monitoring</h1>
+      <p className="mt-1.5 max-w-3xl text-[15px] text-slate-600">Run health, freshness, quality and cost — with AI watching for anomalies continuously.</p>
       {loading ? <Skeleton className="mt-6 h-96" /> : deployed.length === 0 ? (
         <Card className="mt-6"><EmptyState icon={<Activity />} title="No deployed pipelines" description="Deploy a pipeline to start monitoring it." action={<Link href="/pipelines"><Button variant="primary">View pipelines</Button></Link>} /></Card>
       ) : (

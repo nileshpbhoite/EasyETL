@@ -18,7 +18,7 @@ import { ParamForm } from "./ParamForm";
 
 export function Panel({ title, info, actions, children, className, bodyClassName }: { title: React.ReactNode; info?: string; actions?: React.ReactNode; children: React.ReactNode; className?: string; bodyClassName?: string }) {
   return (
-    <section className={cn("flex min-w-0 flex-col rounded-2xl border border-slate-200/60 bg-white shadow-card", className)}>
+    <section className={cn("glass flex min-w-0 flex-col rounded-[20px]", className)}>
       <header className="flex items-center gap-2 px-5 pb-3 pt-4">
         <h3 className="text-[15.5px] font-bold text-slate-900">{title}</h3>
         {info && <Tooltip content={info}><CircleHelp className="size-4 text-slate-400" /></Tooltip>}
