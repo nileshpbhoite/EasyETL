@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { Toaster } from "sonner";
+import "@fontsource-variable/inter";
+import "@fontsource-variable/plus-jakarta-sans";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -12,7 +14,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body>
         {children}
-        <Toaster position="bottom-right" richColors closeButton toastOptions={{ className: "!rounded-xl" }} />
+        <Toaster position="top-right" offset={76} richColors closeButton toastOptions={{ className: "!rounded-xl" }} />
       </body>
     </html>
   );

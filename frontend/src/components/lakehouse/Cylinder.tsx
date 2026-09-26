@@ -1,3 +1,5 @@
+import { useId } from "react";
+
 const COLORS = {
   bronze: ["#f7a35c", "#e0782f", "#c2611f"],
   silver: ["#cfd8e3", "#9fb0c3", "#7d8fa5"],
@@ -8,7 +10,7 @@ const COLORS = {
 /** 3D database cylinder used for medallion layers. */
 export function Cylinder({ layer, size = 44 }: { layer: keyof typeof COLORS; size?: number }) {
   const [top, mid, dark] = COLORS[layer];
-  const id = `cyl-${layer}`;
+  const id = `cyl-${layer}${useId().replace(/:/g, "")}`;
   return (
     <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden>
       <defs>

@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDownUp, ArrowRight, CircleCheck, CircleX, Eye, Plus, Redo2, Settings2, Sparkles, Trash2, Undo2, Workflow, ListTree } from "lucide-react";
+import { ArrowDownUp, ArrowRight, CircleCheck, CircleX, Plus, Redo2, Settings2, Sparkles, Trash2, Undo2, Workflow, ListTree } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AssistantChat } from "@/components/shell/AssistantPanel";
 import { QualityPanel } from "@/components/quality/QualityPanel";
@@ -192,6 +192,10 @@ export function Studio({ pipeline, mutate, busy }: StudioProps) {
   if (!datasets.length) return <EmptyState icon={<Workflow />} title="No datasets yet" description="Connect a source and select datasets first." />;
   if (!lib) return <Skeleton className="h-[640px]" />;
 
+  const applyAllRecs = () => mutate("apply", () => api.post<Pipeline>(`/api/pipelines/${pipeline.id}/recommendations/apply`, { ids: pendingIds }), { success: `Applied ${pendingIds.length} AI suggestions` });
+  const applyAll = pendingIds.length > 0 && (
+    <Button variant="primary" onClick={applyAllRecs} loading={busy === "apply"}><Sparkles /> Apply {pendingIds.length} AI suggestion{pendingIds.length !== 1 ? "s" : ""}</Button>
+  );
   const stageSteps = (id: string) => allSteps.filter((x) => x.enabled && stageOf(x.type) === id);
   const stageError = (id: string) => stageSteps(id).some((s) => status[s.id]?.status === "error");
   const visibleStages = STAGES.filter((s) => s.id !== "protect" || stageSteps("protect").length);
@@ -200,49 +204,33 @@ export function Studio({ pipeline, mutate, busy }: StudioProps) {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200/80 bg-white px-4 py-3 shadow-card">
-        <FileTypeIcon format={meta.source.category === "file" ? ds?.format : meta.source.category === "api" ? "api" : "table"} size={30} />
-        <div className="min-w-0">
-          {datasets.length > 1 ? (
-            <Select value={datasetId} onChange={(v) => { setDatasetId(v); setSel(null); setStage(null); }} options={dsNames.map((d) => ({ value: d.id, label: d.name }))} className="w-56 [&_select]:h-8 [&_select]:font-semibold" />
-          ) : (
-            <div className="text-[15px] font-semibold text-slate-900">{dsName}</div>
-          )}
-          <div className="text-xs text-slate-500">{datasets.length} dataset{datasets.length !== 1 ? "s" : ""} • {fmtCompact(ds?.row_count)} rows • {profile?.column_count ?? ds?.column_count} columns</div>
+      <div className="rounded-2xl border border-slate-200/60 bg-white shadow-card">
+        <div className="flex flex-wrap items-center gap-3 px-5 pb-3 pt-4">
+          <FileTypeIcon format={meta.source.category === "file" ? ds?.format : meta.source.category === "api" ? "api" : "table"} size={32} />
+          <div className="min-w-0">
+            {datasets.length > 1 ? (
+              <Select value={datasetId} onChange={(v) => { setDatasetId(v); setSel(null); setStage(null); }} options={dsNames.map((d) => ({ value: d.id, label: d.name }))} className="w-56 [&_select]:h-8 [&_select]:font-semibold" />
+            ) : (
+              <div className="font-display text-[17px] font-bold text-slate-900">{dsName}</div>
+            )}
+            <div className="text-xs text-slate-500">{datasets.length > 1 && `${datasets.length} datasets • `}{fmtCompact(ds?.row_count)} rows • {profile?.column_count ?? ds?.column_count} columns</div>
+          </div>
+          <div className="ml-auto flex items-center gap-1.5">
+            <Tooltip content="Undo"><Button variant="secondary" size="icon" aria-label="Undo" onClick={() => mutate("undo", () => api.post<Pipeline>(`/api/pipelines/${pipeline.id}/undo`), { success: "Undone" })} disabled={pipeline.version <= 1}><Undo2 /></Button></Tooltip>
+            <Tooltip content="Redo"><Button variant="secondary" size="icon" aria-label="Redo" onClick={() => mutate("redo", () => api.post<Pipeline>(`/api/pipelines/${pipeline.id}/undo`), { success: "Redone" })} disabled={!lastUndo}><Redo2 /></Button></Tooltip>
+            <Tooltip content={meta.mode === "advanced" ? "Advanced options are on (click to hide)" : "Show advanced options"}>
+              <Button variant={meta.mode === "advanced" ? "primary" : "secondary"} size="icon" aria-label="Toggle advanced options" onClick={() => mutate("mode", () => api.patch<Pipeline>(`/api/pipelines/${pipeline.id}`, { mode: meta.mode === "advanced" ? "simple" : "advanced" }))}><Settings2 /></Button>
+            </Tooltip>
+            {applyAll}
+          </div>
         </div>
-        <PillTabs value={tab} onChange={(t) => { setTab(t); if (t !== "transform" && t !== "enrich" && t !== "schema") setSel(null); }} className="mx-auto"
-          tabs={[{ value: "preview", label: "Data Preview" }, { value: "transform", label: "Transform" }, { value: "quality", label: "Data Quality" }, { value: "enrich", label: "Enrich & Derive" }, { value: "schema", label: "Schema Mapping" }, { value: "assistant", label: "AI Assistant" }]} />
-        <div className="flex items-center gap-1.5">
-          <Tooltip content="Undo"><Button variant="secondary" size="icon" className="h-9 w-9" onClick={() => mutate("undo", () => api.post<Pipeline>(`/api/pipelines/${pipeline.id}/undo`), { success: "Undone" })} disabled={pipeline.version <= 1}><Undo2 /></Button></Tooltip>
-          <Tooltip content="Redo"><Button variant="secondary" size="icon" className="h-9 w-9" onClick={() => mutate("redo", () => api.post<Pipeline>(`/api/pipelines/${pipeline.id}/undo`), { success: "Redone" })} disabled={!lastUndo}><Redo2 /></Button></Tooltip>
-          <Button variant="secondary" className="border-brand-300 text-brand-700" onClick={() => { setSel(null); setTab("transform"); setTimeout(() => document.getElementById("studio-preview")?.scrollIntoView({ behavior: "smooth" }), 50); }}><Eye /> Preview</Button>
-          <Button variant="primary" onClick={() => mutate("apply", () => api.post<Pipeline>(`/api/pipelines/${pipeline.id}/recommendations/apply`, { ids: pendingIds }), { success: `Applied ${pendingIds.length} recommendations` })} disabled={!pendingIds.length} loading={busy === "apply"}>Apply All</Button>
-          <Tooltip content={meta.mode === "advanced" ? "Advanced Mode is on (click for Simple)" : "Switch to Advanced Mode"}>
-            <Button variant={meta.mode === "advanced" ? "primary" : "secondary"} size="icon" className="h-9 w-9" onClick={() => mutate("mode", () => api.patch<Pipeline>(`/api/pipelines/${pipeline.id}`, { mode: meta.mode === "advanced" ? "simple" : "advanced" }))}><Settings2 /></Button>
-          </Tooltip>
+        <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 px-5 py-2.5">
+          <PillTabs value={tab} onChange={(t) => { setTab(t); if (t !== "transform" && t !== "enrich" && t !== "schema") setSel(null); }}
+            tabs={[{ value: "transform", label: "Transform" }, { value: "preview", label: "Data Preview" }, { value: "quality", label: "Data Quality" }, { value: "enrich", label: "Enrich & Derive" }, { value: "schema", label: "Schema Mapping" }, { value: "assistant", label: "AI Assistant" }]} />
+          {inStudio && <Segmented size="sm" className="ml-auto" value={view} onChange={setView} options={[{ value: "flow", label: "Visual Flow", icon: <Workflow /> }, { value: "table", label: "Table View", icon: <ListTree /> }]} />}
         </div>
-      </div>
-
-      {tab === "preview" && <RawPreview pipelineId={pipeline.id} datasetId={datasetId} />}
-      {tab === "quality" && <QualityPanel pipeline={pipeline} mutate={mutate} />}
-      {tab === "assistant" && (
-        <Panel title="AI Assistant" info="Grounded in this dataset's profile and your transformation steps." bodyClassName="px-0 pb-0">
-          <div className="h-[600px] border-t border-slate-100"><AssistantChat /></div>
-        </Panel>
-      )}
-
-      {inStudio && (
-        <>
-          <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-card">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h2 className="text-[20px] font-semibold tracking-tight text-slate-900">Transformation Studio</h2>
-                <p className="text-[13px] text-slate-500">Clean, standardize and enrich your data with one-click transformations — every change is previewed on your real data.</p>
-              </div>
-              <Segmented value={view} onChange={setView} options={[{ value: "flow", label: "Visual Flow", icon: <Workflow /> }, { value: "table", label: "Table View", icon: <ListTree /> }]} />
-            </div>
-            {view === "flow" && (
-              <div className="mt-4 flex items-stretch gap-1.5 overflow-x-auto pb-1 pt-1.5 scrollbar-thin">
+        {inStudio && view === "flow" && (
+              <div className="flex items-stretch gap-1.5 overflow-x-auto border-t border-slate-100 px-5 pb-4 pt-4 scrollbar-thin">
                 <button onClick={() => setStage(null)} className={cn("relative flex min-w-[170px] items-center gap-2.5 rounded-xl border bg-white px-3 py-2.5 text-left", stage === null ? "border-brand-400 bg-brand-50/40" : "border-slate-200 hover:border-slate-300")}>
                   <FileTypeIcon format={meta.source.category === "file" ? ds?.format : "table"} size={24} />
                   <span className="min-w-0"><span className="block text-[13px] font-semibold text-slate-900">Source</span><span className="block truncate text-[11px] text-slate-500">{dsName}</span><span className="block text-[11px] text-slate-400">{fmtCompact(ds?.row_count)} rows • {profile?.column_count ?? "?"} cols</span></span>
@@ -258,7 +246,7 @@ export function Studio({ pipeline, mutate, busy }: StudioProps) {
                       <ArrowRight className="size-4 shrink-0 text-slate-300" />
                       <button onClick={() => setStage(active ? null : s.id)} className={cn("relative flex min-w-[158px] items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-all", active ? "border-brand-500 bg-brand-50/60 shadow-[0_4px_14px_-8px_rgb(38_89_235)]" : "border-slate-200 bg-white hover:border-slate-300", n === 0 && !active && "opacity-60")}>
                         <span className={cn("flex size-8 items-center justify-center rounded-lg", active ? "bg-brand-600 text-white" : "bg-brand-50 text-brand-600")}><s.icon className="size-4" /></span>
-                        <span className="min-w-0"><span className={cn("block text-[13px] font-semibold", active ? "text-brand-700" : "text-slate-900")}>{s.label}</span><span className="block text-[11px] text-slate-500">{sub}</span></span>
+                        <span className="min-w-0"><span className={cn("block whitespace-nowrap text-[13px] font-semibold", active ? "text-brand-700" : "text-slate-900")}>{s.label}</span><span className="block whitespace-nowrap text-[11px] text-slate-500">{sub}</span></span>
                         {n > 0 && (err ? <CircleX className="absolute -right-1.5 -top-1.5 size-4 rounded-full bg-white text-rose-500" /> : <CircleCheck className="absolute -right-1.5 -top-1.5 size-4 rounded-full bg-white text-emerald-500" />)}
                       </button>
                     </div>
@@ -274,29 +262,40 @@ export function Studio({ pipeline, mutate, busy }: StudioProps) {
                 </div>
               </div>
             )}
-          </div>
+      </div>
 
+      {tab === "preview" && <RawPreview pipelineId={pipeline.id} datasetId={datasetId} />}
+      {tab === "quality" && <QualityPanel pipeline={pipeline} mutate={mutate} />}
+      {tab === "assistant" && (
+        <Panel title="AI Assistant" info="Grounded in this dataset's profile and your transformation steps." bodyClassName="px-0 pb-0">
+          <div className="h-[600px] border-t border-slate-100"><AssistantChat /></div>
+        </Panel>
+      )}
+
+      {inStudio && (
+        <>
           <div className="grid gap-4 xl:grid-cols-[240px_minmax(0,1fr)_320px]">
             <Panel title="Transformation Library" className="h-[640px]" bodyClassName="flex flex-col">
               <Library key={libCat ?? "all"} ref={searchRef} lib={lib} onPick={pickTransform} initialCat={libCat} />
             </Panel>
 
             <Panel
-              title={<>Applied Transformations ({allSteps.length}){stage && <span className="ml-2 text-[13px] font-normal text-brand-600">· {STAGES.find((s) => s.id === stage)?.label} <button className="underline" onClick={() => setStage(null)}>show all</button></span>}</>}
+              title={<>Your Steps ({allSteps.length}){stage && <span className="ml-2 text-[13px] font-normal text-brand-600">· {STAGES.find((s) => s.id === stage)?.label} <button className="underline" onClick={() => setStage(null)}>show all</button></span>}</>}
               info="Steps run top to bottom. Drag to reorder, toggle to disable, or click to edit."
               className="h-[640px]"
               bodyClassName="flex min-h-0 gap-4"
               actions={
                 <>
-                  <Button size="sm" variant="secondary" className="border-brand-300 text-brand-700" onClick={() => searchRef.current?.focus()}><Plus /> Add Transformation</Button>
+                  <Button size="sm" variant="secondary" className="border-brand-200 text-brand-700" onClick={() => searchRef.current?.focus()}><Plus /> Add</Button>
                   <Button size="sm" variant={reorderMode ? "primary" : "secondary"} onClick={() => setReorderMode((v) => !v)}><ArrowDownUp /> Reorder</Button>
-                  <Button size="sm" variant="secondary" className="text-rose-600" onClick={() => setConfirmClear(true)} disabled={!allSteps.length}><Trash2 /> Clear All</Button>
+                  <Tooltip content="Remove all steps"><Button size="sm" variant="secondary" className="text-rose-600" aria-label="Clear all" onClick={() => setConfirmClear(true)} disabled={!allSteps.length}><Trash2 /></Button></Tooltip>
                 </>
               }
             >
               <div className={cn("min-h-0 overflow-y-auto pr-1 scrollbar-thin", spec ? "hidden flex-1 2xl:block" : "flex-1")}>
                 <AppliedList steps={steps} lib={lib} selectedId={sel?.kind === "step" ? sel.id : undefined} status={status} reorderMode={reorderMode} view={view}
-                  onSelect={selectStep} onToggle={toggleStep} onDelete={setConfirmDelete} onMove={move} onDrop={dropAt} onDuplicate={duplicate} busy={!!busy} />
+                  onSelect={selectStep} onToggle={toggleStep} onDelete={setConfirmDelete} onMove={move} onDrop={dropAt} onDuplicate={duplicate} busy={!!busy}
+                  emptyAction={<>{applyAll}<Button variant="secondary" onClick={() => searchRef.current?.focus()}><Plus /> Browse library</Button></>} />
               </div>
               {spec && (
                 <div className="flex w-full min-w-0 flex-col border-slate-100 2xl:w-[300px] 2xl:shrink-0 2xl:border-l 2xl:pl-4">

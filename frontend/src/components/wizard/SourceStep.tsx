@@ -100,7 +100,7 @@ export function SourceStep({ pipeline, mutate, busy, goTo }: StepProps) {
     const res = await mutate("source", () => api.post<Pipeline & { test: { ok: boolean; message: string; title: string } }>(`/api/pipelines/${pipeline.id}/source`, p));
     if (res && !res.test.ok) toast.error(res.test.title, { description: res.test.message });
     else if (res) {
-      toast.success("✓ Connection successful", { description: `${res.metadata.source.datasets.length} objects discovered` });
+      toast.success("Connection successful", { description: `${res.metadata.source.datasets.length} objects discovered` });
       setChanging(false);
       setSelected(null);
     }

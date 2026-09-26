@@ -12,12 +12,12 @@ import type { ApiError } from "@/lib/api";
 
 // ------------------------------------------------------------------ Button
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500 [&_svg]:size-4 [&_svg]:shrink-0",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl text-sm font-semibold transition-all active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500 [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
         primary: "gradient-primary text-white shadow-glow hover:brightness-110 active:brightness-95",
-        secondary: "bg-white text-slate-700 border border-slate-200 shadow-card hover:bg-slate-50 hover:border-slate-300",
+        secondary: "bg-white text-slate-700 border border-slate-200 shadow-sm hover:bg-slate-50 hover:border-slate-300 hover:text-slate-900",
         ghost: "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
         ai: "bg-ai-600 text-white hover:bg-ai-700 shadow-[0_8px_24px_-10px_rgb(124_58_237_/_0.7)]",
         aiSoft: "bg-ai-50 text-ai-700 border border-ai-200 hover:bg-ai-100",
@@ -26,7 +26,7 @@ const buttonVariants = cva(
         databricks: "bg-dbx-500 text-white hover:bg-dbx-600 shadow-[0_8px_24px_-10px_rgb(255_54_33_/_0.7)]",
         link: "text-brand-600 hover:text-brand-700 underline-offset-4 hover:underline px-0",
       },
-      size: { sm: "h-8 px-3 text-xs", md: "h-9 px-4", lg: "h-11 px-6 text-[15px]", icon: "h-8 w-8" },
+      size: { sm: "h-8 rounded-lg px-3 text-xs", md: "h-10 px-4", lg: "h-11 px-6 text-[15px]", icon: "h-9 w-9" },
     },
     defaultVariants: { variant: "secondary", size: "md" },
   },
@@ -46,7 +46,7 @@ Button.displayName = "Button";
 
 // ------------------------------------------------------------------ Card
 export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("rounded-xl border border-slate-200/80 bg-white shadow-card", className)} {...props} />;
+  return <div className={cn("rounded-2xl border border-slate-200/60 bg-white shadow-card", className)} {...props} />;
 }
 
 export function CardHeader({ title, description, icon, actions, className }: { title: React.ReactNode; description?: React.ReactNode; icon?: React.ReactNode; actions?: React.ReactNode; className?: string }) {
@@ -122,7 +122,7 @@ export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttribute
   <input
     ref={ref}
     className={cn(
-      "h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 shadow-sm placeholder:text-slate-400 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-slate-50",
+      "h-10 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-800 shadow-sm placeholder:text-slate-400 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-slate-50",
       className,
     )}
     {...props}
@@ -240,16 +240,16 @@ export function Checkbox({ checked, onChange, disabled, className, indeterminate
 
 export function Segmented<T extends string>({ value, onChange, options, className, size = "md" }: { value: T; onChange: (v: T) => void; options: { value: T; label: React.ReactNode; icon?: React.ReactNode }[]; className?: string; size?: "sm" | "md" }) {
   return (
-    <div className={cn("inline-flex rounded-lg bg-slate-100 p-0.5", className)}>
+    <div className={cn("inline-flex rounded-xl bg-slate-100/80 p-1", className)}>
       {options.map((o) => (
         <button
           key={o.value}
           type="button"
           onClick={() => onChange(o.value)}
           className={cn(
-            "flex items-center gap-1.5 rounded-md font-medium transition-all [&_svg]:size-3.5",
+            "flex items-center gap-1.5 rounded-lg font-medium transition-all [&_svg]:size-3.5",
             size === "sm" ? "px-2.5 py-1 text-xs" : "px-3 py-1.5 text-sm",
-            value === o.value ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700",
+            value === o.value ? "bg-white text-brand-700 shadow-sm ring-1 ring-slate-200/70" : "text-slate-500 hover:text-slate-700",
           )}
         >
           {o.icon}
@@ -456,7 +456,7 @@ export function Stat({ label, value, sub, icon, tone = "brand", className }: { l
         <div className="text-xs font-medium text-slate-500">{label}</div>
         {icon && <div className={cn("flex size-7 items-center justify-center rounded-lg [&_svg]:size-4", iconTone)}>{icon}</div>}
       </div>
-      <div className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">{value}</div>
+      <div className="font-display mt-2 text-2xl font-bold tracking-tight text-slate-900">{value}</div>
       {sub && <div className="mt-1 text-xs text-slate-500">{sub}</div>}
     </Card>
   );

@@ -28,7 +28,7 @@ export default function SourcesPage() {
     setSaving(true);
     try {
       const res = await api.post<{ status: string; test: { ok: boolean; message: string } }>("/api/connections", p);
-      if (res.test.ok) toast.success("✓ Connection saved", { description: "Credentials were encrypted in the secret store." });
+      if (res.test.ok) toast.success("Connection saved", { description: "Credentials were encrypted in the secret store." });
       else toast.warning("Saved, but the connection test failed", { description: res.test.message });
       setSpec(null);
       void reload();

@@ -18,13 +18,13 @@ import { ParamForm } from "./ParamForm";
 
 export function Panel({ title, info, actions, children, className, bodyClassName }: { title: React.ReactNode; info?: string; actions?: React.ReactNode; children: React.ReactNode; className?: string; bodyClassName?: string }) {
   return (
-    <section className={cn("flex min-w-0 flex-col rounded-2xl border border-slate-200/80 bg-white shadow-card", className)}>
-      <header className="flex items-center gap-2 px-4 pb-2 pt-3.5">
-        <h3 className="text-[16px] font-semibold text-slate-900">{title}</h3>
+    <section className={cn("flex min-w-0 flex-col rounded-2xl border border-slate-200/60 bg-white shadow-card", className)}>
+      <header className="flex items-center gap-2 px-5 pb-3 pt-4">
+        <h3 className="text-[15.5px] font-bold text-slate-900">{title}</h3>
         {info && <Tooltip content={info}><CircleHelp className="size-4 text-slate-400" /></Tooltip>}
         {actions && <div className="ml-auto flex items-center gap-1.5">{actions}</div>}
       </header>
-      <div className={cn("min-h-0 flex-1 px-4 pb-4", bodyClassName)}>{children}</div>
+      <div className={cn("min-h-0 flex-1 px-5 pb-5", bodyClassName)}>{children}</div>
     </section>
   );
 }
@@ -108,7 +108,7 @@ export function describeParams(step: TransformStep): string {
   return cols.length ? `Applies to ${cols.slice(0, 4).join(", ")}${cols.length > 4 ? "…" : ""}` : "";
 }
 
-export function AppliedList({ steps, lib, selectedId, status, reorderMode, view, onSelect, onToggle, onDelete, onMove, onDrop, onDuplicate, busy }: {
+export function AppliedList({ steps, lib, selectedId, status, reorderMode, view, onSelect, onToggle, onDelete, onMove, onDrop, onDuplicate, busy, emptyAction }: {
   steps: TransformStep[];
   lib: TransformLibrary;
   selectedId?: string;
@@ -122,15 +122,17 @@ export function AppliedList({ steps, lib, selectedId, status, reorderMode, view,
   onDrop: (dragId: string, index: number) => void;
   onDuplicate: (s: TransformStep) => void;
   busy: boolean;
+  emptyAction?: React.ReactNode;
 }) {
   const [dragId, setDragId] = useState<string | null>(null);
   const spec = (t: string) => lib.transforms.find((x) => x.id === t);
   if (!steps.length)
     return (
-      <div className="flex h-full flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 p-8 text-center">
-        <Sparkles className="size-6 text-brand-500" />
-        <div className="mt-2 text-sm font-semibold text-slate-800">No transformations yet</div>
-        <div className="mt-1 text-xs text-slate-500">Apply the AI recommendations or add one from the library.</div>
+      <div className="flex flex-col items-center rounded-2xl border-2 border-dashed border-brand-100 bg-gradient-to-b from-brand-50/40 to-white px-8 py-12 text-center">
+        <span className="flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br from-ai-500 to-brand-500 text-white shadow-lg"><Sparkles className="size-7" /></span>
+        <div className="font-display mt-4 text-[17px] font-bold text-slate-900">Let's clean up your data</div>
+        <div className="mt-1 max-w-sm text-[13px] text-slate-500">AI has already found what needs fixing. Apply its suggestions in one click, or pick any transformation from the library on the left.</div>
+        {emptyAction && <div className="mt-5 flex flex-wrap justify-center gap-2">{emptyAction}</div>}
       </div>
     );
   if (view === "table")
@@ -317,11 +319,11 @@ export function RecsPanel({ pipeline, datasetId, lib, mutate, onRefresh, refresh
         ))}
       </div>
       {recs.length > 0 && (
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <Button variant="primary" onClick={() => (sel.some((r) => r.destructive) ? setConfirm(true) : apply(sel.map((r) => r.id)))} disabled={!sel.length} loading={applying}>
-            <Sparkles /> Apply Selected ({sel.length})
+        <div className="mt-3 flex flex-col gap-2">
+          <Button variant="primary" className="w-full" onClick={() => (sel.some((r) => r.destructive) ? setConfirm(true) : apply(sel.map((r) => r.id)))} disabled={!sel.length} loading={applying}>
+            <Sparkles /> Apply selected ({sel.length})
           </Button>
-          <Button variant="secondary" className="border-brand-300 text-brand-700" onClick={() => setExplain(true)} disabled={!sel.length}>View Explanation</Button>
+          <Button variant="ghost" size="sm" className="w-full text-brand-700" onClick={() => setExplain(true)} disabled={!sel.length}>Why these suggestions?</Button>
         </div>
       )}
       <Dialog open={explain} onOpenChange={setExplain} title="Why AI recommends these" description="Every recommendation is based on measured facts in your data and validated by the policy engine." size="lg"
@@ -501,15 +503,15 @@ export function SummaryPanel({ preview, steps, piiCount, onExportSpec, onExportC
         )}
       </div>
     }>
-      <div className="grid grid-cols-2 gap-2 2xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2">
         {[
           { v: fmtNumber(a?.rows), l: a && b && a.rows !== b.rows ? `Rows (was ${fmtNumber(b.rows)})` : "Rows (unchanged)" },
           { v: a?.columns ?? "—", l: a && b && a.columns !== b.columns ? `Columns (was ${b.columns})` : "Columns" },
           { v: enabled, l: "Transformations applied" },
           { v: a?.duplicates ?? "—", l: preview?.changes.rows_removed ? `Duplicate rows (removed ${fmtNumber(preview.changes.rows_removed)})` : "Duplicate rows" },
         ].map((t) => (
-          <div key={t.l} className="rounded-xl border border-slate-200 px-3 py-2.5">
-            <div className="text-xl font-semibold tabular-nums text-slate-900">{t.v}</div>
+          <div key={t.l} className="rounded-xl bg-slate-50 px-3.5 py-3">
+            <div className="font-display text-xl font-bold tabular-nums text-slate-900">{t.v}</div>
             <div className="text-[11px] leading-tight text-slate-500">{t.l}</div>
           </div>
         ))}

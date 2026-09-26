@@ -46,7 +46,7 @@ export function ReadinessCheck({ pipeline, mutate, busy, compact }: Pick<StepPro
           <div key={c.id} className={cn("flex items-start gap-2.5 px-4", compact ? "py-2" : "py-3")}>
             {c.status === "pass" ? <CircleCheck className="mt-0.5 size-4 shrink-0 text-emerald-500" /> : c.status === "fail" ? <CircleX className="mt-0.5 size-4 shrink-0 text-rose-500" /> : c.status === "warn" ? <TriangleAlert className="mt-0.5 size-4 shrink-0 text-amber-500" /> : <Info className="mt-0.5 size-4 shrink-0 text-sky-500" />}
             <div className="min-w-0 flex-1">
-              <div className={cn("text-[13px] font-semibold", c.status === "fail" ? "text-rose-800" : "text-slate-900")}>{c.status === "pass" ? "✓ " : ""}{c.label}</div>
+              <div className={cn("text-[13px] font-semibold", c.status === "fail" ? "text-rose-800" : "text-slate-900")}>{c.label}</div>
               {(!compact || c.status !== "pass") && <div className="text-[12.5px] text-slate-600">{c.message}</div>}
               {!compact && c.details.length > 0 && <ul className="mt-1 space-y-0.5 text-xs text-slate-500">{c.details.slice(0, 5).map((d) => <li key={d}>• {d}</li>)}</ul>}
             </div>

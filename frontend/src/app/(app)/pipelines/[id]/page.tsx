@@ -1,10 +1,11 @@
 "use client";
 
-import { Check, CloudCheck, History, LayoutTemplate, LoaderCircle, Pencil, Sparkles, SlidersHorizontal, Undo2 } from "lucide-react";
+import { Check, CloudCheck, History, LayoutTemplate, Lightbulb, LoaderCircle, Pencil, Sparkles, SlidersHorizontal, Undo2, X } from "lucide-react";
 import { toast } from "sonner";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
-import { Badge, Button, Dialog, ErrorBox, Field, Input, Segmented, Skeleton, Textarea } from "@/components/ui";
+import { Badge, Button, Dialog, ErrorBox, Segmented, Skeleton, Tooltip } from "@/components/ui";
+import { WizardStepContext } from "@/components/wizard/common";
 import { Stepper } from "@/components/wizard/Stepper";
 import { SourceStep } from "@/components/wizard/SourceStep";
 import { AnalyzeStep } from "@/components/wizard/AnalyzeStep";
@@ -50,6 +51,29 @@ function HistoryDialog({ id, open, onOpenChange, onRestore }: { id: string; open
   );
 }
 
+const GUIDE: Record<Step, string> = {
+  source: "Upload a file or pick a system to connect. Not sure where to start? Try one of the sample files.",
+  analyze: "AI has profiled your data. Skim what it found — there's nothing to set up here — then continue.",
+  transform: "Apply the AI suggestions in one click, or add your own from the library. Every change shows a before/after preview.",
+  configure: "We picked the best way to load your data. Keep the recommendation or choose an alternative.",
+  design: "Your Bronze → Silver → Gold tables are designed for you. Rename or adjust them only if you want to.",
+  review: "A final check before going live. Anything flagged can be fixed with one click.",
+  deploy: "One click creates everything in Databricks. You can redeploy at any time.",
+  monitor: "Your pipeline is live. We watch every run and alert you if anything looks unusual.",
+};
+
+function useTipsHidden() {
+  const [hidden, setHidden] = useState(false);
+  useEffect(() => {
+    try { setHidden(localStorage.getItem("easyetl.tips.hidden") === "1"); } catch { /* storage unavailable */ }
+  }, []);
+  const set = (v: boolean) => {
+    setHidden(v);
+    try { localStorage.setItem("easyetl.tips.hidden", v ? "1" : "0"); } catch { /* storage unavailable */ }
+  };
+  return [hidden, set] as const;
+}
+
 function Wizard() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -60,6 +84,7 @@ function Wizard() {
   const [name, setName] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
   const [templateOpen, setTemplateOpen] = useState(false);
+  const [tipsHidden, setTipsHidden] = useTipsHidden();
 
   const step = (search.get("step") as Step) || pipeline?.metadata.current_step || "source";
 
@@ -97,7 +122,7 @@ function Wizard() {
   return (
     <div className="flex min-h-full flex-col">
       <div className="mx-auto w-full max-w-[1680px] px-5 pt-5 md:px-6">
-        <div className="mb-3 flex flex-wrap items-center gap-3">
+        <div className="mb-4 flex flex-wrap items-center gap-3">
           <div className="min-w-0 flex-1">
             {editingName ? (
               <input
@@ -110,7 +135,7 @@ function Wizard() {
               />
             ) : (
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                <button onClick={() => { setName(pipeline.name); setEditingName(true); }} className="group flex items-center gap-2 text-lg font-semibold tracking-tight text-slate-900">
+                <button onClick={() => { setName(pipeline.name); setEditingName(true); }} className="font-display group flex items-center gap-2 text-[22px] font-bold tracking-tight text-slate-900">
                   {pipeline.name}
                   <Pencil className="size-3.5 text-slate-300 group-hover:text-slate-500" />
                 </button>
@@ -133,19 +158,36 @@ function Wizard() {
             onChange={(v) => mutate("mode", () => api.patch<Pipeline>(`/api/pipelines/${id}`, { mode: v }))}
             options={[{ value: "simple", label: "Simple", icon: <Sparkles /> }, { value: "advanced", label: "Advanced", icon: <SlidersHorizontal /> }]}
           />
-          <Button variant="ghost" size="sm" onClick={() => mutate("undo", () => api.post<Pipeline>(`/api/pipelines/${id}/undo`), { success: "Last change undone" })} disabled={pipeline.version <= 1}>
-            <Undo2 /> Undo
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => setHistoryOpen(true)}>
-            <History /> History
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => setTemplateOpen(true)} disabled={!meta.transformations.length}>
-            <LayoutTemplate /> Save as Template
-          </Button>
+          <div className="flex items-center rounded-xl border border-slate-200/70 bg-white p-0.5 shadow-sm">
+            <Tooltip content="Undo last change">
+              <Button variant="ghost" size="icon" aria-label="Undo" onClick={() => mutate("undo", () => api.post<Pipeline>(`/api/pipelines/${id}/undo`), { success: "Last change undone" })} disabled={pipeline.version <= 1}><Undo2 /></Button>
+            </Tooltip>
+            <Tooltip content="Version history">
+              <Button variant="ghost" size="icon" aria-label="Version history" onClick={() => setHistoryOpen(true)}><History /></Button>
+            </Tooltip>
+            <Tooltip content="Save as a reusable template">
+              <Button variant="ghost" size="icon" aria-label="Save as template" onClick={() => setTemplateOpen(true)} disabled={!meta.transformations.length}><LayoutTemplate /></Button>
+            </Tooltip>
+            {tipsHidden && (
+              <Tooltip content="Show tips">
+                <Button variant="ghost" size="icon" aria-label="Show tips" onClick={() => setTipsHidden(false)}><Lightbulb /></Button>
+              </Tooltip>
+            )}
+          </div>
         </div>
         <Stepper current={step} completed={meta.completed_steps} onSelect={goTo} deployed={meta.deployment.status === "deployed"} />
+        {!tipsHidden && GUIDE[step] && (
+          <div key={step} className="mt-3 flex items-center gap-3 rounded-xl border border-amber-200/70 bg-gradient-to-r from-amber-50 to-orange-50/40 px-4 py-2.5 animate-slide-up">
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-600"><Lightbulb className="size-4" /></span>
+            <p className="min-w-0 flex-1 text-[13.5px] text-amber-900"><span className="font-semibold">What to do here: </span>{GUIDE[step]}</p>
+            <button onClick={() => setTipsHidden(true)} className="flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100" aria-label="Hide tips">
+              <X className="size-3.5" /> Hide tips
+            </button>
+          </div>
+        )}
       </div>
       <div className="mx-auto w-full max-w-[1680px] flex-1 px-5 py-5 md:px-6">
+        <WizardStepContext.Provider value={{ index: Math.max(0, STEPS.findIndex((s) => s.id === step)), total: STEPS.length, label: STEPS.find((s) => s.id === step)?.label ?? "" }}>
         {step === "source" && <SourceStep {...props} />}
         {step === "analyze" && <AnalyzeStep {...props} />}
         {step === "transform" && <TransformStep {...props} />}
@@ -155,6 +197,7 @@ function Wizard() {
         {step === "deploy" && <DeployStep {...props} />}
         {step === "monitor" && <MonitoringDashboard pipelineId={id} embedded />}
         {!STEPS.some((s) => s.id === step) && <ErrorBox error={new Error("Unknown step")} />}
+        </WizardStepContext.Provider>
       </div>
       <SaveTemplateDialog key={pipeline.name} id={id} open={templateOpen} onOpenChange={setTemplateOpen} defaultName={`${pipeline.name} template`} />
       <HistoryDialog

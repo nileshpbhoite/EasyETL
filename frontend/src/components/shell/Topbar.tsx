@@ -1,13 +1,12 @@
 "use client";
 
-import { ArrowRight, Bell, ChevronDown, CircleHelp, Library, LogOut, Rocket, Search, Sparkles, Workflow } from "lucide-react";
-import { toast } from "sonner";
+import { Bell, ChevronDown, CircleHelp, Library, LogOut, Menu, Plus, Search, Sparkles, Workflow } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, clearSession, getStoredUser } from "@/lib/api";
 import { useUI } from "@/lib/store";
-import { STEPS, type Alert, type PipelineSummary, type Step } from "@/lib/types";
+import type { Alert, PipelineSummary } from "@/lib/types";
 import { cn, humanize, timeAgo } from "@/lib/utils";
 import { Button, Select } from "@/components/ui";
 
@@ -161,7 +160,7 @@ function UserMenu() {
   return (
     <div className="relative">
       <button onClick={() => setOpen((v) => !v)} className="flex items-center gap-2 rounded-lg px-1.5 py-1 hover:bg-slate-100" aria-label="User menu">
-        <div className="flex size-9 items-center justify-center rounded-full bg-navy-900 text-xs font-semibold text-white ring-2 ring-white">{initials}</div>
+        <div className="flex size-9 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-ai-600 text-xs font-bold text-white ring-2 ring-white">{initials}</div>
         <ChevronDown className="hidden size-3.5 text-slate-400 2xl:block" />
       </button>
       {open && (
@@ -195,40 +194,22 @@ function UserMenu() {
   );
 }
 
-export function Topbar() {
+export function Topbar({ onMenu }: { onMenu?: () => void } = {}) {
   const path = usePathname();
-  const router = useRouter();
-  const search = useSearchParams();
   const { openAssistant, environment, setEnvironment } = useUI();
-  const pipelineMatch = path.match(/^\/pipelines\/([a-z0-9]{8,})/);
-  const step = (search.get("step") ?? "source") as Step;
-  const idx = STEPS.findIndex((s) => s.id === step);
-  const next = STEPS[idx + 1];
-  const [saving, setSaving] = useState(false);
-
-  const save = async () => {
-    if (!pipelineMatch) return;
-    setSaving(true);
-    try {
-      const p = await api.patch<{ version: number }>(`/api/pipelines/${pipelineMatch[1]}`, { current_step: step });
-      toast.success("All changes saved", { description: `Version ${p.version} · autosave is always on` });
-    } catch (e) {
-      toast.error("Couldn't save", { description: (e as Error).message });
-    } finally {
-      setSaving(false);
-    }
-  };
+  const inWizard = /^\/pipelines\/[a-z0-9]{8,}/.test(path);
 
   return (
-    <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center gap-3 border-b border-slate-200/70 bg-white/85 px-4 backdrop-blur md:px-6">
+    <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center gap-3 border-b border-slate-200/60 bg-white/80 px-4 backdrop-blur-md md:px-6">
+      <Button variant="ghost" size="icon" className="md:hidden" aria-label="Open menu" onClick={onMenu}><Menu /></Button>
       <GlobalSearch />
       <button
-        onClick={() => openAssistant(pipelineMatch ? {} : { pipelineId: undefined, page: path.split("/")[1] || "home" })}
-        className="hidden h-9 items-center gap-1.5 rounded-full border border-ai-300 bg-ai-50/60 px-3.5 text-[13px] font-medium text-ai-700 hover:bg-ai-100 sm:flex"
+        onClick={() => openAssistant(inWizard ? {} : { pipelineId: undefined, page: path.split("/")[1] || "home" })}
+        className="hidden h-10 items-center gap-1.5 rounded-xl bg-gradient-to-r from-ai-50 to-brand-50 px-3.5 text-[13px] font-semibold text-ai-700 ring-1 ring-ai-200 transition-all hover:ring-ai-300 sm:flex"
       >
-        <Sparkles className="size-4" /> Ask AI / Help
+        <Sparkles className="size-4" /> Ask AI
       </button>
-      <div className="ml-auto flex items-center gap-2">
+      <div className="ml-auto flex items-center gap-1.5">
         <Select
           value={environment}
           onChange={setEnvironment}
@@ -245,22 +226,12 @@ export function Topbar() {
             <CircleHelp />
           </Button>
         </Link>
-        <UserMenu />
-        {pipelineMatch && (
-          <>
-            <Button variant="secondary" size="md" onClick={save} loading={saving}>Save</Button>
-            {next && (
-              <Button variant="primary" size="md" onClick={() => router.push(`/pipelines/${pipelineMatch[1]}?step=${next.id}`)}>
-                Next <ArrowRight />
-              </Button>
-            )}
-          </>
+        {!inWizard && path !== "/" && path !== "/pipelines/new" && (
+          <Link href="/pipelines/new" className="ml-1">
+            <Button variant="primary"><Plus /> New Pipeline</Button>
+          </Link>
         )}
-        <Link href={pipelineMatch ? `/pipelines/${pipelineMatch[1]}?step=review` : "/pipelines/new"}>
-          <Button variant="primary" size="md" className="h-10 px-4">
-            <Rocket /> Deploy to Databricks
-          </Button>
-        </Link>
+        <UserMenu />
       </div>
     </header>
   );
