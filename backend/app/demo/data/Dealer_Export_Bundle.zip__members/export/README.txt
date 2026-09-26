@@ -1,1 +1,0 @@
-Dealer DMS nightly export.

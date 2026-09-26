@@ -19,3 +19,4 @@ frontend/next-env.d.ts
 .vscode/
 
 .env
+backend/app/demo/data/*__members/

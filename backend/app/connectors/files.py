@@ -26,6 +26,17 @@ SUPPORTED_FORMATS = {
 MAX_DETECT_ROWS = 2_000_000
 
 
+def _members_dir(path: Path) -> Path:
+    """Where ZIP members are extracted: a cache in object storage, never next to the source file."""
+    import hashlib
+
+    from ..core.config import get_settings
+
+    st = path.stat()
+    key = hashlib.sha1(f"{path.resolve()}:{st.st_size}:{st.st_mtime_ns}".encode()).hexdigest()[:16]
+    return get_settings().storage_root / "zip_cache" / key
+
+
 def _ext(name: str) -> str:
     name = name.lower()
     if name.endswith(".gz"):
@@ -321,12 +332,14 @@ def detect_file(path: Path, filename: str) -> dict:
             for info in zf.infolist():
                 if info.is_dir() or info.filename.startswith("__MACOSX") or info.filename.split("/")[-1].startswith("."):
                     continue
+                if info.filename.startswith(("/", "\\")) or ".." in Path(info.filename).parts:
+                    continue  # never extract outside the cache directory (zip-slip)
                 member_ext = _ext(info.filename)
                 if member_ext not in SUPPORTED_FORMATS or member_ext == "zip":
                     result["entries"].append({"name": info.filename, "kind": "zip_member", "format": member_ext or "unknown",
                                               "supported": False, "size_bytes": info.file_size, "locator": {"member": info.filename}})
                     continue
-                extracted = path.parent / f"{path.name}__members" / info.filename
+                extracted = _members_dir(path) / info.filename
                 extracted.parent.mkdir(parents=True, exist_ok=True)
                 if not extracted.exists():
                     with zf.open(info) as src, extracted.open("wb") as dst:
@@ -413,7 +426,7 @@ def detect_file(path: Path, filename: str) -> dict:
 def read_file_entry(path: Path, filename: str, locator: dict, limit: int | None = None) -> pl.DataFrame:
     """Read one detected entry into a DataFrame."""
     if "member" in locator:
-        member_path = path.parent / f"{path.name}__members" / locator["member"]
+        member_path = _members_dir(path) / locator["member"]
         if not member_path.exists():
             detect_file(path, filename)
         sub = {k: v for k, v in locator.items() if k != "member"}
